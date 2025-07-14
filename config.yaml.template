@@ -1,0 +1,64 @@
+# Plex RAR Bridge Configuration Template
+# Copy this file to config.yaml and fill in your settings
+
+handbrake:
+  enabled: false
+  executable: C:/Program Files/HandBrake/HandBrakeCLI.exe
+  preset: Fast 1080p30
+  quality: 22
+
+logging:
+  backup_count: 5
+  level: INFO
+  max_log_size: 10485760
+
+options:
+  delete_archives: true
+  duplicate_check: true
+  enable_gui: false
+  enable_reencoding: false
+  extensions:
+    - .rar
+    - .r00
+    - .r01
+    - .r02
+    - .r03
+    - .r04
+    - .r05
+    - .r06
+    - .r07
+    - .r08
+    - .r09
+  file_stabilization_time: 10
+  max_file_age: 3600
+  max_retry_age_hours: 4
+  max_retry_attempts: 20
+  retry_interval: 60
+  scan_existing_files: true
+
+paths:
+  # Directory to watch for RAR files
+  watch: C:\PlexRarBridge\rar_watch
+  
+  # Temporary work directory for extraction
+  work: C:\PlexRarBridge\work
+  
+  # Directory where extracted files will be moved (your Plex library folder)
+  target: D:\Media\Movies
+  
+  # Directory for failed/encrypted archives
+  failed: C:\PlexRarBridge\failed
+  
+  # Directory to store processed archives (if not deleting)
+  archive: C:\PlexRarBridge\archive
+
+plex:
+  # Plex server URL (usually http://127.0.0.1:32400)
+  host: http://127.0.0.1:32400
+  
+  # Your Plex library section key (find in Plex web interface URL)
+  library_key: 1
+  
+  # Your Plex authentication token
+  # Get from: https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
+  token: YOUR_PLEX_TOKEN_HERE 
