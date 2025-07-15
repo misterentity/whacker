@@ -4047,7 +4047,7 @@ class PlexRarBridgeGUI:
             # Import the enhanced setup panel
             from enhanced_setup_panel import EnhancedSetupPanel
             
-            # Create the enhanced setup panel
+            # Create the enhanced setup panel (it will add itself to the notebook)
             self.enhanced_setup_panel = EnhancedSetupPanel(self.notebook, self.script_dir)
             
         except ImportError:

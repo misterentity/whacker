@@ -52,17 +52,22 @@ class EnhancedSetupPanel:
             }
         }
         
-        self.create_enhanced_setup_tab()
-    
-    def create_enhanced_setup_tab(self):
-        """Create enhanced setup panel with processing mode selection"""
-        # Create main frame
-        self.setup_frame = ttk.Frame(self.parent)
+        # Create the enhanced setup frame and return it
+        self.setup_frame = self.create_enhanced_setup_panel()
+        # Add the frame to the parent notebook
         self.parent.add(self.setup_frame, text="Enhanced Setup")
         
+        # Load existing setup
+        self.load_setup_config()
+    
+    def create_enhanced_setup_panel(self):
+        """Create enhanced setup panel with processing mode selection"""
+        # Create main frame
+        setup_frame = ttk.Frame(self.parent)
+        
         # Create scrollable frame
-        canvas = tk.Canvas(self.setup_frame)
-        scrollbar = ttk.Scrollbar(self.setup_frame, orient="vertical", command=canvas.yview)
+        canvas = tk.Canvas(setup_frame)
+        scrollbar = ttk.Scrollbar(setup_frame, orient="vertical", command=canvas.yview)
         scrollable_frame = ttk.Frame(canvas)
         
         scrollable_frame.bind(
@@ -86,8 +91,7 @@ class EnhancedSetupPanel:
         self.create_upnp_config_section(scrollable_frame)
         self.create_enhanced_setup_controls_section(scrollable_frame)
         
-        # Load existing setup
-        self.load_setup_config()
+        return setup_frame
     
     def create_processing_mode_info_section(self, parent):
         """Create processing mode information section"""
@@ -146,7 +150,7 @@ You can assign different processing modes to different directories based on your
                 command=self.update_global_mode_info
             ).pack(side=tk.LEFT)
             
-            ttk.Label(
+            tk.Label(
                 mode_radio_frame,
                 text=f"- {mode_info['description']}",
                 foreground='gray'
@@ -156,7 +160,7 @@ You can assign different processing modes to different directories based on your
         self.global_mode_info_frame = ttk.Frame(global_frame)
         self.global_mode_info_frame.pack(fill=tk.X, pady=(10, 0))
         
-        self.global_mode_info_label = ttk.Label(self.global_mode_info_frame, text="")
+        self.global_mode_info_label = tk.Label(self.global_mode_info_frame, text="")
         self.global_mode_info_label.pack(anchor=tk.W)
         
         # Update info initially
@@ -200,7 +204,7 @@ You can assign different processing modes to different directories based on your
         ttk.Button(plex_frame, text="Auto-Detect", command=self.auto_detect_token).grid(row=1, column=2, padx=(10, 0), pady=5)
         
         # Connection status
-        self.plex_status_label = ttk.Label(plex_frame, text="Not Connected", foreground='red')
+        self.plex_status_label = tk.Label(plex_frame, text="Not Connected", foreground='red')
         self.plex_status_label.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=5)
         
         ttk.Button(plex_frame, text="Test Connection", command=self.test_plex_connection).grid(row=2, column=2, padx=(10, 0), pady=5)
@@ -315,7 +319,7 @@ You can assign different processing modes to different directories based on your
         ttk.Button(mount_frame, text="Browse", command=self.browse_mount_base).pack(side=tk.LEFT)
         
         # Status
-        self.vfs_status_label = ttk.Label(vfs_frame, text="✅ Python VFS: Ready (No dependencies required)", foreground='green')
+        self.vfs_status_label = tk.Label(vfs_frame, text="✅ Python VFS: Ready (No dependencies required)", foreground='green')
         self.vfs_status_label.pack(anchor=tk.W, pady=(10, 0))
     
     def create_rar2fs_config_tab(self):
@@ -352,7 +356,7 @@ You can assign different processing modes to different directories based on your
         ttk.Button(install_frame, text="Test rar2fs", command=self.test_rar2fs).pack(side=tk.LEFT, padx=5)
         
         # Status
-        self.rar2fs_status_label = ttk.Label(rar2fs_frame, text="❌ rar2fs: Not installed", foreground='red')
+        self.rar2fs_status_label = tk.Label(rar2fs_frame, text="❌ rar2fs: Not installed", foreground='red')
         self.rar2fs_status_label.pack(anchor=tk.W, pady=(10, 0))
     
     def create_extraction_config_tab(self):
@@ -383,7 +387,7 @@ You can assign different processing modes to different directories based on your
         ttk.Checkbutton(options_frame, text="Enable duplicate detection", variable=self.duplicate_check_var).pack(anchor=tk.W)
         
         # Status
-        self.extraction_status_label = ttk.Label(extraction_frame, text="✅ Extraction: Ready (UnRAR required)", foreground='green')
+        self.extraction_status_label = tk.Label(extraction_frame, text="✅ Extraction: Ready (UnRAR required)", foreground='green')
         self.extraction_status_label.pack(anchor=tk.W, pady=(10, 0))
     
     def create_upnp_config_section(self, parent):
@@ -396,7 +400,7 @@ You can assign different processing modes to different directories based on your
             "UPnP automatically configures port forwarding for Python VFS HTTP server.\n"
             "This helps bypass firewall issues and enables remote access to streamed content."
         )
-        ttk.Label(upnp_frame, text=description_text, foreground='blue').pack(anchor=tk.W, pady=(0, 10))
+        tk.Label(upnp_frame, text=description_text, foreground='blue').pack(anchor=tk.W, pady=(0, 10))
         
         # UPnP enabled checkbox
         self.upnp_enabled_var = tk.BooleanVar(value=True)
@@ -436,7 +440,7 @@ You can assign different processing modes to different directories based on your
         status_frame = ttk.Frame(self.upnp_settings_frame)
         status_frame.pack(fill=tk.X, pady=(10, 0))
         
-        self.upnp_status_label = ttk.Label(status_frame, text="UPnP Status: Not tested", foreground='gray')
+        self.upnp_status_label = tk.Label(status_frame, text="UPnP Status: Not tested", foreground='gray')
         self.upnp_status_label.pack(side=tk.LEFT)
         
         ttk.Button(status_frame, text="Test UPnP", command=self.test_upnp).pack(side=tk.RIGHT, padx=(5, 0))
@@ -450,7 +454,7 @@ You can assign different processing modes to different directories based on your
             "ℹ️ UPnP requires a compatible router and may not work on all networks.\n"
             "If UPnP fails, manual port forwarding may be required for remote access."
         )
-        ttk.Label(info_frame, text=info_text, foreground='orange', font=('TkDefaultFont', 8)).pack(anchor=tk.W)
+        tk.Label(info_frame, text=info_text, foreground='orange', font=('TkDefaultFont', 8)).pack(anchor=tk.W)
         
         # Initialize UPnP settings state
         self.toggle_upnp_settings()
@@ -459,7 +463,10 @@ You can assign different processing modes to different directories based on your
         """Toggle UPnP settings visibility"""
         if self.upnp_enabled_var.get():
             for widget in self.upnp_settings_frame.winfo_children():
-                widget.configure(state='normal')
+                try:
+                    widget.configure(state='normal')
+                except:
+                    pass
                 for child in widget.winfo_children():
                     try:
                         child.configure(state='normal')
@@ -467,7 +474,10 @@ You can assign different processing modes to different directories based on your
                         pass
         else:
             for widget in self.upnp_settings_frame.winfo_children():
-                widget.configure(state='disabled')
+                try:
+                    widget.configure(state='disabled')
+                except:
+                    pass
                 for child in widget.winfo_children():
                     try:
                         child.configure(state='disabled')
@@ -571,7 +581,7 @@ You can assign different processing modes to different directories based on your
         controls_frame.pack(fill=tk.X, padx=10, pady=5)
         
         # Status label
-        self.setup_status_label = ttk.Label(controls_frame, text="Ready to configure", foreground='blue')
+        self.setup_status_label = tk.Label(controls_frame, text="Ready to configure", foreground='blue')
         self.setup_status_label.pack(pady=(0, 10))
         
         # Control buttons
@@ -949,21 +959,114 @@ You can assign different processing modes to different directories based on your
     
     def auto_detect_plex(self):
         """Auto-detect Plex server"""
-        # Implementation for Plex auto-detection
-        # This would use the existing discovery functions
-        pass
+        # Find status label (create if not exists)
+        if not hasattr(self, 'setup_status_label'):
+            self.setup_status_label = tk.Label(self.setup_frame, text="Detecting Plex server...")
+            self.setup_status_label.pack(pady=5)
+        
+        self.setup_status_label.config(text="Detecting Plex server...", foreground='blue')
+        self.setup_frame.update()
+        
+        try:
+            # Import the discovery functions from setup.py
+            import sys
+            sys.path.append(str(self.script_dir))
+            from setup import discover_plex_server
+            
+            host = discover_plex_server()
+            if host:
+                self.plex_host_var.set(host)
+                self.setup_status_label.config(text=f"Found Plex server: {host}", foreground='green')
+                # Auto-detect token if server found
+                self.auto_detect_token()
+            else:
+                self.setup_status_label.config(text="Could not auto-detect Plex server", foreground='orange')
+        except Exception as e:
+            self.setup_status_label.config(text=f"Error detecting Plex: {e}", foreground='red')
     
     def auto_detect_token(self):
         """Auto-detect Plex token"""
-        # Implementation for token auto-detection
-        # This would use the existing discovery functions
-        pass
+        if not hasattr(self, 'setup_status_label'):
+            self.setup_status_label = tk.Label(self.setup_frame, text="Detecting Plex token...")
+            self.setup_status_label.pack(pady=5)
+        
+        self.setup_status_label.config(text="Detecting Plex token...", foreground='blue')
+        self.setup_frame.update()
+        
+        try:
+            from setup import discover_plex_token
+            
+            token = discover_plex_token()
+            if token:
+                self.plex_token_var.set(token)
+                self.setup_status_label.config(text="Plex token detected successfully", foreground='green')
+                # Auto-test connection
+                self.test_plex_connection()
+            else:
+                self.setup_status_label.config(text="Could not auto-detect Plex token", foreground='orange')
+        except Exception as e:
+            self.setup_status_label.config(text=f"Error detecting token: {e}", foreground='red')
     
     def test_plex_connection(self):
-        """Test Plex connection"""
-        # Implementation for Plex connection testing
-        # This would use the existing test functions
-        pass
+        """Test Plex connection and load libraries"""
+        host = self.plex_host_var.get().strip()
+        token = self.plex_token_var.get().strip()
+        
+        if not host or not token:
+            self.plex_status_label.config(text="Please enter host and token", foreground='red')
+            return
+        
+        if not hasattr(self, 'setup_status_label'):
+            self.setup_status_label = tk.Label(self.setup_frame, text="Testing Plex connection...")
+            self.setup_status_label.pack(pady=5)
+        
+        self.setup_status_label.config(text="Testing Plex connection...", foreground='blue')
+        self.setup_frame.update()
+        
+        try:
+            # Test connection
+            import requests
+            url = f"{host.rstrip('/')}/library/sections"
+            params = {'X-Plex-Token': token}
+            
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            
+            # Parse libraries
+            import xml.etree.ElementTree as ET
+            root = ET.fromstring(response.content)
+            
+            libraries = []
+            self.libraries_listbox.delete(0, tk.END)
+            
+            for directory in root.findall('.//Directory'):
+                lib_key = directory.get('key')
+                lib_title = directory.get('title')
+                lib_type = directory.get('type')
+                
+                if lib_key and lib_title:
+                    library_info = {
+                        'key': lib_key,
+                        'title': lib_title,
+                        'type': lib_type
+                    }
+                    libraries.append(library_info)
+                    
+                    # Add to listbox with type indicator
+                    type_icon = "📽️" if lib_type == "movie" else "📺" if lib_type == "show" else "📁"
+                    display_text = f"{type_icon} {lib_title} (Key: {lib_key})"
+                    self.libraries_listbox.insert(tk.END, display_text)
+            
+            self.setup_data['plex_libraries'] = libraries
+            self.setup_data['plex_host'] = host
+            self.setup_data['plex_token'] = token
+            
+            self.plex_status_label.config(text=f"✅ Connected - Found {len(libraries)} libraries", foreground='green')
+            self.setup_status_label.config(text=f"Connected to Plex - {len(libraries)} libraries available", foreground='green')
+            
+        except Exception as e:
+            self.plex_status_label.config(text=f"❌ Connection failed: {e}", foreground='red')
+            self.setup_status_label.config(text=f"Plex connection failed: {e}", foreground='red')
     
     def auto_install_rar2fs(self):
         """Auto-install rar2fs"""
@@ -1094,7 +1197,7 @@ class DirectoryPairDialog:
             ).pack(side=tk.LEFT)
             
             # Description
-            desc_label = ttk.Label(mode_frame, text=f"- {mode_info['description']}", foreground='gray')
+            desc_label = tk.Label(mode_frame, text=f"- {mode_info['description']}", foreground='gray')
             desc_label.pack(side=tk.LEFT, padx=(10, 0))
         
         # Plex library selection
@@ -1102,7 +1205,7 @@ class DirectoryPairDialog:
         
         self.plex_library_var = tk.StringVar(value=self.existing_pair['plex_library'] if self.existing_pair else '')
         library_combo = ttk.Combobox(main_frame, textvariable=self.plex_library_var, width=50)
-        library_combo['values'] = [lib['name'] for lib in self.plex_libraries]
+        library_combo['values'] = [lib['title'] for lib in self.plex_libraries]
         library_combo.pack(anchor=tk.W, pady=(0, 10))
         
         # Buttons
@@ -1200,9 +1303,9 @@ class ProcessingModeConfigDialog:
             details_frame = ttk.Frame(mode_frame)
             details_frame.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(20, 0))
             
-            ttk.Label(details_frame, text=mode_info['description'], foreground='gray').pack(anchor=tk.W)
-            ttk.Label(details_frame, text=f"Dependencies: {mode_info['dependencies']}", foreground='blue').pack(anchor=tk.W)
-            ttk.Label(details_frame, text=f"Complexity: {mode_info['complexity']}", foreground='orange').pack(anchor=tk.W)
+            tk.Label(details_frame, text=mode_info['description'], foreground='gray').pack(anchor=tk.W)
+            tk.Label(details_frame, text=f"Dependencies: {mode_info['dependencies']}", foreground='blue').pack(anchor=tk.W)
+            tk.Label(details_frame, text=f"Complexity: {mode_info['complexity']}", foreground='orange').pack(anchor=tk.W)
         
         # Buttons
         button_frame = ttk.Frame(main_frame)
