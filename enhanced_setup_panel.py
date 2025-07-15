@@ -531,7 +531,7 @@ You can assign different processing modes to different directories based on your
             self.upnp_status_label.config(text=f"❌ UPnP: Test error - {str(e)}", foreground='red')
     
     def discover_upnp_router(self):
-        """Discover UPnP router"""
+        """Discover UPnP router with detailed feedback"""
         try:
             self.upnp_status_label.config(text="Discovering UPnP router...", foreground='blue')
             
@@ -539,6 +539,7 @@ You can assign different processing modes to different directories based on your
                 try:
                     from upnp_port_manager import UPnPPortManager
                     import logging
+                    import socket
                     
                     logger = logging.getLogger('upnp_discover')
                     logger.setLevel(logging.INFO)
@@ -564,7 +565,27 @@ You can assign different processing modes to different directories based on your
                             foreground='green'
                         )
                     else:
-                        self.upnp_status_label.config(text="❌ UPnP: No router found", foreground='red')
+                        # Provide detailed troubleshooting information
+                        try:
+                            # Get actual router IP (default gateway)
+                            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                            sock.connect(("8.8.8.8", 80))
+                            local_ip = sock.getsockname()[0]
+                            sock.close()
+                            
+                            router_ip = self.get_default_gateway()
+                            
+                            self.upnp_status_label.config(
+                                text=f"❌ UPnP: No router found - Check router UPnP settings at {router_ip}", 
+                                foreground='red'
+                            )
+                            
+                            # Show troubleshooting dialog
+                            self.show_upnp_troubleshooting_dialog(router_ip, local_ip)
+                            
+                        except Exception as ex:
+                            self.upnp_status_label.config(text=f"❌ UPnP: No router found - Check router UPnP settings", foreground='red')
+                            print(f"UPnP gateway detection error: {ex}")
                         
                 except Exception as e:
                     self.upnp_status_label.config(text=f"❌ UPnP: Discovery error - {str(e)}", foreground='red')
@@ -574,6 +595,104 @@ You can assign different processing modes to different directories based on your
             
         except Exception as e:
             self.upnp_status_label.config(text=f"❌ UPnP: Discovery error - {str(e)}", foreground='red')
+    
+    def show_upnp_troubleshooting_dialog(self, router_ip, local_ip):
+        """Show UPnP troubleshooting dialog"""
+        try:
+            import tkinter as tk
+            from tkinter import messagebox
+            
+            # Create troubleshooting message
+            message = f"""UPnP router not found. Here's how to fix it:
+
+1. ENABLE UPnP ON YOUR ROUTER:
+   • Open your router's web interface: http://{router_ip}
+   • Look for 'UPnP' or 'Universal Plug and Play' settings
+   • Enable UPnP if it's disabled
+
+2. COMMON LOCATIONS:
+   • Advanced → UPnP
+   • Network → UPnP  
+   • Firewall → UPnP
+   • Services → UPnP
+
+3. WINDOWS FIREWALL:
+   • Allow 'UPnP Device Host' and 'UPnP Device Discovery'
+   • Enable for both Private and Public networks
+
+4. ALTERNATIVE - MANUAL PORT FORWARDING:
+   • Port: 8765 (TCP)
+   • Internal IP: {local_ip}
+   • External Port: 8765 → Internal Port: 8765
+
+5. REBOOT:
+   • Reboot your router after enabling UPnP
+   • Wait 2-3 minutes and test again
+
+Your router IP: {router_ip}
+Your computer IP: {local_ip}"""
+            
+            # Show dialog in main thread
+            self.parent.after(0, lambda: messagebox.showinfo("UPnP Troubleshooting", message))
+            
+        except Exception as e:
+            print(f"Error showing troubleshooting dialog: {e}")
+    
+    def get_default_gateway(self):
+        """Get the default gateway IP address"""
+        try:
+            import subprocess
+            import re
+            
+            # Try Windows route command
+            result = subprocess.run(['route', 'print', '0.0.0.0'], 
+                                  capture_output=True, text=True, timeout=5)
+            
+            if result.returncode == 0:
+                # Look for default route (0.0.0.0)
+                lines = result.stdout.split('\n')
+                for line in lines:
+                    if '0.0.0.0' in line and 'Gateway' not in line:
+                        # Extract gateway IP from route table
+                        parts = line.split()
+                        if len(parts) >= 3:
+                            gateway_ip = parts[2]
+                            # Validate IP format
+                            if re.match(r'^(\d{1,3}\.){3}\d{1,3}$', gateway_ip):
+                                return gateway_ip
+            
+            # Fallback: try ipconfig
+            result = subprocess.run(['ipconfig'], capture_output=True, text=True, timeout=5)
+            if result.returncode == 0:
+                # Look for "Default Gateway"
+                lines = result.stdout.split('\n')
+                for line in lines:
+                    if 'Default Gateway' in line and ':' in line:
+                        gateway_ip = line.split(':')[1].strip()
+                        if gateway_ip and re.match(r'^(\d{1,3}\.){3}\d{1,3}$', gateway_ip):
+                            return gateway_ip
+            
+            # Last resort: assume common router IPs
+            common_gateways = ['192.168.1.1', '192.168.0.1', '192.168.1.254', '10.0.0.1']
+            for gateway in common_gateways:
+                try:
+                    # Quick connectivity test
+                    import socket
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(1)
+                    result = sock.connect_ex((gateway, 80))
+                    sock.close()
+                    if result == 0:
+                        return gateway
+                except:
+                    continue
+            
+            # Default fallback
+            return '192.168.1.1'
+            
+        except Exception as e:
+            print(f"Error detecting gateway: {e}")
+            return '192.168.1.1'
     
     def create_enhanced_setup_controls_section(self, parent):
         """Create enhanced setup control buttons"""
@@ -1205,7 +1324,22 @@ class DirectoryPairDialog:
         
         self.plex_library_var = tk.StringVar(value=self.existing_pair['plex_library'] if self.existing_pair else '')
         library_combo = ttk.Combobox(main_frame, textvariable=self.plex_library_var, width=50)
-        library_combo['values'] = [lib['title'] for lib in self.plex_libraries]
+        
+        # Safely populate library values
+        try:
+            if self.plex_libraries:
+                library_values = []
+                for lib in self.plex_libraries:
+                    # Support both 'title' and 'name' fields for compatibility
+                    title = lib.get('title', lib.get('name', 'Unknown Library'))
+                    library_values.append(title)
+                library_combo['values'] = library_values
+            else:
+                library_combo['values'] = ['No libraries available']
+        except Exception as e:
+            print(f"Error populating library combo: {e}")
+            library_combo['values'] = ['Error loading libraries']
+        
         library_combo.pack(anchor=tk.W, pady=(0, 10))
         
         # Buttons

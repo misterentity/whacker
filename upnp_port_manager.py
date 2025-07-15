@@ -53,8 +53,18 @@ class UPnPPortManager:
         if not self.enabled:
             return False
             
+        # Try primary discovery method first
+        if self._discover_router_primary():
+            return True
+            
+        # Try alternative discovery method if primary fails
+        self.logger.info("Primary UPnP discovery failed, trying alternative method...")
+        return self._discover_router_alternative()
+    
+    def _discover_router_primary(self):
+        """Primary UPnP discovery method using SSDP"""
         try:
-            self.logger.info("Discovering UPnP router...")
+            self.logger.info("Discovering UPnP router (primary method)...")
             
             # SSDP discover message
             ssdp_request = (
@@ -65,75 +75,258 @@ class UPnPPortManager:
                 "MX: 3\r\n\r\n"
             )
             
-            # Send SSDP request
+            # Create socket with proper configuration
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
             sock.settimeout(self.timeout)
-            sock.sendto(ssdp_request.encode(), ('239.255.255.250', 1900))
             
-            # Wait for response
-            response, addr = sock.recvfrom(1024)
-            sock.close()
+            # Enable broadcast and reuse address
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             
-            # Parse response
-            response_str = response.decode()
-            location = None
-            for line in response_str.split('\r\n'):
-                if line.startswith('LOCATION:'):
-                    location = line.split(':', 1)[1].strip()
+            # Try to bind to local interface
+            try:
+                sock.bind(('', 0))
+            except Exception as e:
+                self.logger.warning(f"Socket bind failed: {e}")
+            
+            # Send SSDP request multiple times to improve discovery
+            for attempt in range(3):
+                try:
+                    sock.sendto(ssdp_request.encode(), ('239.255.255.250', 1900))
+                    self.logger.debug(f"SSDP discovery attempt {attempt + 1}")
+                    time.sleep(0.1)  # Small delay between attempts
+                except Exception as e:
+                    self.logger.warning(f"SSDP send attempt {attempt + 1} failed: {e}")
+            
+            # Wait for responses (can be multiple)
+            responses = []
+            start_time = time.time()
+            
+            while time.time() - start_time < self.timeout:
+                try:
+                    # Adjust timeout for remaining time
+                    remaining_time = self.timeout - (time.time() - start_time)
+                    if remaining_time <= 0:
+                        break
+                    
+                    sock.settimeout(min(remaining_time, 1.0))
+                    response, addr = sock.recvfrom(1024)
+                    responses.append((response, addr))
+                    self.logger.debug(f"Received UPnP response from {addr}")
+                    
+                except socket.timeout:
+                    # Timeout waiting for this response, but continue listening
+                    continue
+                except Exception as e:
+                    self.logger.debug(f"Error receiving response: {e}")
                     break
             
-            if location:
-                self.logger.info(f"Found UPnP router at: {location}")
-                return self._parse_router_info(location)
+            sock.close()
             
-        except socket.timeout:
-            self.logger.warning("UPnP router discovery timed out")
+            # Process all responses
+            if responses:
+                self.logger.info(f"Found {len(responses)} UPnP response(s)")
+                
+                for response, addr in responses:
+                    try:
+                        response_str = response.decode()
+                        location = None
+                        
+                        # Parse response headers
+                        for line in response_str.split('\r\n'):
+                            if line.upper().startswith('LOCATION:'):
+                                location = line.split(':', 1)[1].strip()
+                                break
+                        
+                        if location:
+                            self.logger.info(f"Found UPnP router at: {location}")
+                            if self._parse_router_info(location):
+                                return True
+                    except Exception as e:
+                        self.logger.warning(f"Error parsing response from {addr}: {e}")
+                        continue
+            
+            self.logger.warning("No compatible UPnP router found (primary method)")
+            return False
+            
         except Exception as e:
-            self.logger.error(f"UPnP router discovery failed: {e}")
-        
-        return False
+            self.logger.error(f"UPnP router discovery failed (primary method): {e}")
+            return False
+    
+    def _discover_router_alternative(self):
+        """Alternative UPnP discovery method with different service types"""
+        try:
+            self.logger.info("Discovering UPnP router (alternative method)...")
+            
+            # Try different service types
+            service_types = [
+                "urn:schemas-upnp-org:device:InternetGatewayDevice:2",
+                "urn:schemas-upnp-org:service:WANIPConnection:1",
+                "urn:schemas-upnp-org:service:WANPPPConnection:1",
+                "upnp:rootdevice",
+                "ssdp:all"
+            ]
+            
+            for st in service_types:
+                self.logger.debug(f"Trying service type: {st}")
+                
+                ssdp_request = (
+                    "M-SEARCH * HTTP/1.1\r\n"
+                    "HOST: 239.255.255.250:1900\r\n"
+                    "MAN: \"ssdp:discover\"\r\n"
+                    f"ST: {st}\r\n"
+                    "MX: 3\r\n\r\n"
+                )
+                
+                # Create socket with multicast options
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.settimeout(5)  # Shorter timeout for alternative method
+                
+                # Set socket options for multicast
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                
+                # Enable multicast
+                try:
+                    mreq = struct.pack('4sl', socket.inet_aton('239.255.255.250'), socket.INADDR_ANY)
+                    sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+                except Exception as e:
+                    self.logger.debug(f"Multicast setup failed: {e}")
+                
+                try:
+                    sock.sendto(ssdp_request.encode(), ('239.255.255.250', 1900))
+                    
+                    # Wait for response
+                    response, addr = sock.recvfrom(1024)
+                    response_str = response.decode()
+                    
+                    # Parse location
+                    location = None
+                    for line in response_str.split('\r\n'):
+                        if line.upper().startswith('LOCATION:'):
+                            location = line.split(':', 1)[1].strip()
+                            break
+                    
+                    if location:
+                        self.logger.info(f"Found UPnP device at: {location} (service: {st})")
+                        if self._parse_router_info(location):
+                            sock.close()
+                            return True
+                            
+                except socket.timeout:
+                    self.logger.debug(f"Timeout for service type: {st}")
+                except Exception as e:
+                    self.logger.debug(f"Error with service type {st}: {e}")
+                finally:
+                    sock.close()
+            
+            self.logger.warning("No compatible UPnP router found (alternative method)")
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"UPnP router discovery failed (alternative method): {e}")
+            return False
     
     def _parse_router_info(self, location):
         """Parse router information from UPnP location"""
         try:
+            self.logger.debug(f"Parsing UPnP device info from: {location}")
+            
             # Get device description
             response = requests.get(location, timeout=self.timeout)
             response.raise_for_status()
             
-            # Parse XML
-            root = ET.fromstring(response.content)
+            self.logger.debug(f"UPnP response status: {response.status_code}")
             
-            # Find service information
-            namespaces = {'device': 'urn:schemas-upnp-org:device-1-0'}
+            # Parse XML with better error handling
+            try:
+                root = ET.fromstring(response.content)
+            except ET.ParseError as e:
+                self.logger.error(f"XML parsing error: {e}")
+                return False
             
-            # Look for WANIPConnection service
-            services = root.findall('.//device:service', namespaces)
+            # Find service information with multiple namespace attempts
+            namespace_attempts = [
+                {'device': 'urn:schemas-upnp-org:device-1-0'},
+                {'device': 'urn:schemas-upnp-org:device-1-0:device'},
+                {}  # No namespace
+            ]
+            
+            services = []
+            for ns in namespace_attempts:
+                try:
+                    if ns:
+                        services = root.findall('.//device:service', ns)
+                    else:
+                        services = root.findall('.//service')
+                    if services:
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Namespace attempt failed: {e}")
+                    continue
+            
+            if not services:
+                self.logger.warning("No services found in UPnP device description")
+                return False
+            
+            self.logger.debug(f"Found {len(services)} UPnP services")
+            
+            # Look for WANIPConnection service first (preferred)
             for service in services:
-                service_type = service.find('device:serviceType', namespaces)
-                if service_type is not None and 'WANIPConnection' in service_type.text:
-                    control_url = service.find('device:controlURL', namespaces)
-                    if control_url is not None:
-                        # Build full control URL
-                        base_url = location.rsplit('/', 1)[0]
-                        self.control_url = f"{base_url}{control_url.text}"
-                        self.service_type = service_type.text
+                try:
+                    service_type_elem = service.find('serviceType') or service.find('.//serviceType')
+                    if service_type_elem is not None:
+                        service_type = service_type_elem.text
+                        self.logger.debug(f"Found service type: {service_type}")
                         
-                        self.logger.info(f"UPnP control URL: {self.control_url}")
-                        return True
+                        if service_type and 'WANIPConnection' in service_type:
+                            control_url_elem = service.find('controlURL') or service.find('.//controlURL')
+                            if control_url_elem is not None:
+                                control_url = control_url_elem.text
+                                
+                                # Build full control URL
+                                if control_url.startswith('/'):
+                                    base_url = location.rsplit('/', 1)[0]
+                                    self.control_url = f"{base_url}{control_url}"
+                                else:
+                                    self.control_url = control_url
+                                
+                                self.service_type = service_type
+                                
+                                self.logger.info(f"UPnP control URL: {self.control_url}")
+                                return True
+                except Exception as e:
+                    self.logger.debug(f"Error processing service: {e}")
+                    continue
             
             # Fallback to WANPPPConnection
             for service in services:
-                service_type = service.find('device:serviceType', namespaces)
-                if service_type is not None and 'WANPPPConnection' in service_type.text:
-                    control_url = service.find('device:controlURL', namespaces)
-                    if control_url is not None:
-                        base_url = location.rsplit('/', 1)[0]
-                        self.control_url = f"{base_url}{control_url.text}"
-                        self.service_type = service_type.text
+                try:
+                    service_type_elem = service.find('serviceType') or service.find('.//serviceType')
+                    if service_type_elem is not None:
+                        service_type = service_type_elem.text
                         
-                        self.logger.info(f"UPnP control URL (PPP): {self.control_url}")
-                        return True
+                        if service_type and 'WANPPPConnection' in service_type:
+                            control_url_elem = service.find('controlURL') or service.find('.//controlURL')
+                            if control_url_elem is not None:
+                                control_url = control_url_elem.text
+                                
+                                # Build full control URL
+                                if control_url.startswith('/'):
+                                    base_url = location.rsplit('/', 1)[0]
+                                    self.control_url = f"{base_url}{control_url}"
+                                else:
+                                    self.control_url = control_url
+                                
+                                self.service_type = service_type
+                                
+                                self.logger.info(f"UPnP control URL (PPP): {self.control_url}")
+                                return True
+                except Exception as e:
+                    self.logger.debug(f"Error processing PPP service: {e}")
+                    continue
                         
+        except requests.RequestException as e:
+            self.logger.error(f"Failed to fetch UPnP device description: {e}")
         except Exception as e:
             self.logger.error(f"Failed to parse router info: {e}")
         
