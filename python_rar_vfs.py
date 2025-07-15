@@ -20,6 +20,7 @@ import shutil
 import hashlib
 import tempfile
 import time
+import ssl
 from pathlib import Path
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -95,6 +96,7 @@ class RarVirtualFileSystem:
         self.http_thread = None
         self.server_port = self._find_available_port()
         self.shutdown_event = threading.Event()
+        self.use_https = False # Track if HTTPS is enabled
         
         # Initialize UPnP integration
         self.upnp_vfs = UPnPIntegratedVFS(config, logger)
@@ -132,14 +134,135 @@ class RarVirtualFileSystem:
             # Fallback to localhost if network detection fails
             return "127.0.0.1"
     
+    def _create_self_signed_cert(self):
+        """Create a self-signed SSL certificate for HTTPS"""
+        import subprocess
+        import os
+        
+        cert_dir = self.temp_dir / "ssl"
+        cert_dir.mkdir(parents=True, exist_ok=True)
+        
+        cert_file = cert_dir / "server.crt"
+        key_file = cert_dir / "server.key"
+        
+        # Check if certificates already exist
+        if cert_file.exists() and key_file.exists():
+            return str(cert_file), str(key_file)
+        
+        try:
+            # Create self-signed certificate using OpenSSL if available
+            cmd = [
+                "openssl", "req", "-x509", "-newkey", "rsa:4096",
+                "-keyout", str(key_file), "-out", str(cert_file),
+                "-days", "365", "-nodes",
+                "-subj", "/C=US/ST=State/L=City/O=PlexRarBridge/CN=localhost"
+            ]
+            
+            subprocess.run(cmd, check=True, capture_output=True)
+            self.logger.info("Created self-signed SSL certificate")
+            return str(cert_file), str(key_file)
+            
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # Fallback: Create certificate using Python's cryptography library
+            try:
+                from cryptography import x509
+                from cryptography.x509.oid import NameOID
+                from cryptography.hazmat.primitives import hashes
+                from cryptography.hazmat.primitives.asymmetric import rsa
+                from cryptography.hazmat.primitives import serialization
+                from datetime import datetime, timedelta
+                
+                # Generate private key
+                private_key = rsa.generate_private_key(
+                    public_exponent=65537,
+                    key_size=2048,
+                )
+                
+                # Create certificate subject
+                subject = issuer = x509.Name([
+                    x509.NameAttribute(NameOID.COUNTRY_NAME, "US"),
+                    x509.NameAttribute(NameOID.STATE_OR_PROVINCE_NAME, "State"),
+                    x509.NameAttribute(NameOID.LOCALITY_NAME, "City"),
+                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "PlexRarBridge"),
+                    x509.NameAttribute(NameOID.COMMON_NAME, "localhost"),
+                ])
+                
+                # Create certificate
+                cert = x509.CertificateBuilder().subject_name(
+                    subject
+                ).issuer_name(
+                    issuer
+                ).public_key(
+                    private_key.public_key()
+                ).serial_number(
+                    x509.random_serial_number()
+                ).not_valid_before(
+                    datetime.utcnow()
+                ).not_valid_after(
+                    datetime.utcnow() + timedelta(days=365)
+                ).add_extension(
+                    x509.SubjectAlternativeName([
+                        x509.DNSName("localhost"),
+                        x509.DNSName("127.0.0.1"),
+                        x509.DNSName(self._get_server_ip()),
+                    ]),
+                    critical=False,
+                ).sign(private_key, hashes.SHA256())
+                
+                # Write certificate and key to files
+                with open(cert_file, 'wb') as f:
+                    f.write(cert.public_bytes(serialization.Encoding.PEM))
+                
+                with open(key_file, 'wb') as f:
+                    f.write(private_key.private_bytes(
+                        encoding=serialization.Encoding.PEM,
+                        format=serialization.PrivateFormat.PKCS8,
+                        encryption_algorithm=serialization.NoEncryption()
+                    ))
+                
+                self.logger.info("Created self-signed SSL certificate using cryptography library")
+                return str(cert_file), str(key_file)
+                
+            except ImportError:
+                self.logger.warning("OpenSSL and cryptography library not available, falling back to HTTP")
+                return None, None
+            except Exception as e:
+                self.logger.error(f"Failed to create SSL certificate: {e}")
+                return None, None
+    
     def _start_http_server(self):
         """Start HTTP server for serving virtual files"""
         try:
             handler = self._create_request_handler()
             self.http_server = HTTPServer(('0.0.0.0', self.server_port), handler)
+            
+            # Try to enable HTTPS
+            cert_file, key_file = self._create_self_signed_cert()
+            if cert_file and key_file:
+                try:
+                    # Create SSL context
+                    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+                    context.load_cert_chain(cert_file, key_file)
+                    
+                    # Wrap the server socket with SSL
+                    self.http_server.socket = context.wrap_socket(
+                        self.http_server.socket, 
+                        server_side=True
+                    )
+                    
+                    self.use_https = True
+                    self.logger.info(f"RAR VFS HTTPS server started on 0.0.0.0:{self.server_port}")
+                    
+                except Exception as e:
+                    self.logger.warning(f"Failed to enable HTTPS, falling back to HTTP: {e}")
+                    self.use_https = False
+                    self.logger.info(f"RAR VFS HTTP server started on 0.0.0.0:{self.server_port}")
+            else:
+                self.use_https = False
+                self.logger.info(f"RAR VFS HTTP server started on 0.0.0.0:{self.server_port}")
+            
             self.http_thread = threading.Thread(target=self._run_server, daemon=True)
             self.http_thread.start()
-            self.logger.info(f"RAR VFS HTTP server started on 0.0.0.0:{self.server_port}")
             
             # Setup UPnP port forwarding
             self.upnp_vfs.setup_port_forwarding(self.server_port)
@@ -156,6 +279,30 @@ class RarVirtualFileSystem:
             def log_message(self, format, *args):
                 # Suppress HTTP server logs
                 pass
+            
+            def do_HEAD(self):
+                """Handle HEAD requests for metadata"""
+                try:
+                    # Parse request path
+                    file_path = unquote(self.path.lstrip('/'))
+                    
+                    # Find virtual file
+                    virtual_file = vfs._find_virtual_file(file_path)
+                    if not virtual_file:
+                        self.send_error(404, "File not found")
+                        return
+                    
+                    # Send headers only (no body)
+                    self.send_response(200)
+                    self.send_header('Content-Type', mimetypes.guess_type(virtual_file.name)[0] or 'video/x-msvideo')
+                    self.send_header('Content-Length', str(virtual_file.size))
+                    self.send_header('Accept-Ranges', 'bytes')
+                    self._add_security_headers()
+                    self.end_headers()
+                    
+                except Exception as e:
+                    vfs.logger.error(f"HEAD handler error: {e}")
+                    self.send_error(500, "Internal server error")
             
             def do_GET(self):
                 try:
@@ -179,6 +326,14 @@ class RarVirtualFileSystem:
                     vfs.logger.error(f"HTTP handler error: {e}")
                     self.send_error(500, "Internal server error")
             
+            def _add_security_headers(self):
+                """Add security headers to the response"""
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'Range, Content-Type')
+                self.send_header('Cache-Control', 'public, max-age=3600')
+                self.send_header('Server', 'PlexRarBridge/2.1.1')
+            
             def _handle_range_request(self, virtual_file, range_header):
                 """Handle HTTP range requests for media streaming"""
                 try:
@@ -196,10 +351,11 @@ class RarVirtualFileSystem:
                     
                     # Send headers
                     self.send_response(206)
-                    self.send_header('Content-Type', mimetypes.guess_type(virtual_file.name)[0] or 'application/octet-stream')
+                    self.send_header('Content-Type', mimetypes.guess_type(virtual_file.name)[0] or 'video/x-msvideo')
                     self.send_header('Content-Length', str(content_length))
                     self.send_header('Content-Range', f'bytes {start}-{end}/{virtual_file.size}')
                     self.send_header('Accept-Ranges', 'bytes')
+                    self._add_security_headers()
                     self.end_headers()
                     
                     # Send file content
@@ -215,9 +371,10 @@ class RarVirtualFileSystem:
                 try:
                     # Send headers
                     self.send_response(200)
-                    self.send_header('Content-Type', mimetypes.guess_type(virtual_file.name)[0] or 'application/octet-stream')
+                    self.send_header('Content-Type', mimetypes.guess_type(virtual_file.name)[0] or 'video/x-msvideo')
                     self.send_header('Content-Length', str(virtual_file.size))
                     self.send_header('Accept-Ranges', 'bytes')
+                    self._add_security_headers()
                     self.end_headers()
                     
                     # Send file content
@@ -383,7 +540,8 @@ class RarArchiveHandler:
                             
                             # Create HTTP URL for the file using actual network IP
                             server_ip = self.vfs._get_server_ip()
-                            http_url = f"http://{server_ip}:{self.vfs.server_port}/{virtual_file.virtual_path}"
+                            protocol = "https" if self.vfs.use_https else "http"
+                            http_url = f"{protocol}://{server_ip}:{self.vfs.server_port}/{virtual_file.virtual_path}"
                             
                             # Create link file that points to HTTP URL
                             self._create_link_file(virtual_file, http_url)
