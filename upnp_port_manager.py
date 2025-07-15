@@ -1,12 +1,14 @@
 """
-upnp_port_manager.py - UPnP Port Management for Plex RAR Bridge
+upnp_port_manager.py - Enhanced UPnP Port Management for Plex RAR Bridge
 
 This module provides automatic port forwarding using UPnP (Universal Plug and Play)
 to ensure the Python VFS HTTP server can work through firewalls and routers.
 
 Features:
-- Automatic UPnP router discovery
-- Port forwarding management
+- Enhanced automatic UPnP router discovery with multiple compatibility modes
+- Improved SSDP discovery with better router support
+- Multiple service type detection and fallback mechanisms
+- Port forwarding management with robust error handling
 - Automatic cleanup on shutdown
 - Configurable timeout and retry settings
 - Fallback handling for non-UPnP environments
@@ -21,9 +23,11 @@ import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
 from datetime import datetime, timedelta
 import struct
+import re
+import json
 
-class UPnPPortManager:
-    """Manages UPnP port forwarding for the RAR VFS HTTP server"""
+class EnhancedUPnPPortManager:
+    """Enhanced UPnP Port Manager with improved router compatibility"""
     
     def __init__(self, config, logger):
         self.config = config
@@ -38,6 +42,7 @@ class UPnPPortManager:
         self.router_info = None
         self.control_url = None
         self.service_type = None
+        self.discovered_devices = []
         
         # Port management
         self.forwarded_ports = {}  # {port: description}
@@ -49,25 +54,257 @@ class UPnPPortManager:
         return self.enabled
     
     def discover_router(self):
-        """Discover UPnP-enabled router on the network"""
+        """Enhanced UPnP router discovery with multiple compatibility modes"""
         if not self.enabled:
             return False
             
-        # Try primary discovery method first
-        if self._discover_router_primary():
-            return True
-            
-        # Try alternative discovery method if primary fails
-        self.logger.info("Primary UPnP discovery failed, trying alternative method...")
-        return self._discover_router_alternative()
+        # Try multiple discovery methods in order of preference
+        discovery_methods = [
+            ('enhanced_ssdp', self._discover_enhanced_ssdp),
+            ('broadcast_discovery', self._discover_broadcast),
+            ('multicast_discovery', self._discover_multicast),
+            ('legacy_discovery', self._discover_legacy),
+            ('aggressive_discovery', self._discover_aggressive)
+        ]
+        
+        for method_name, method_func in discovery_methods:
+            try:
+                self.logger.info(f"Trying {method_name} discovery method...")
+                if method_func():
+                    self.logger.info(f"Successfully discovered router using {method_name}")
+                    return True
+            except Exception as e:
+                self.logger.debug(f"{method_name} failed: {e}")
+                continue
+        
+        self.logger.warning("All UPnP discovery methods failed")
+        return False
     
-    def _discover_router_primary(self):
-        """Primary UPnP discovery method using SSDP"""
+    def _discover_enhanced_ssdp(self):
+        """Enhanced SSDP discovery with better compatibility"""
         try:
-            self.logger.info("Discovering UPnP router (primary method)...")
+            # Multiple SSDP requests with different formats
+            ssdp_requests = [
+                # Standard IGD request
+                "M-SEARCH * HTTP/1.1\r\n"
+                "HOST: 239.255.255.250:1900\r\n"
+                "MAN: \"ssdp:discover\"\r\n"
+                "ST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n"
+                "MX: 3\r\n\r\n",
+                
+                # IGD version 2
+                "M-SEARCH * HTTP/1.1\r\n"
+                "HOST: 239.255.255.250:1900\r\n"
+                "MAN: \"ssdp:discover\"\r\n"
+                "ST: urn:schemas-upnp-org:device:InternetGatewayDevice:2\r\n"
+                "MX: 3\r\n\r\n",
+                
+                # Root device discovery
+                "M-SEARCH * HTTP/1.1\r\n"
+                "HOST: 239.255.255.250:1900\r\n"
+                "MAN: \"ssdp:discover\"\r\n"
+                "ST: upnp:rootdevice\r\n"
+                "MX: 3\r\n\r\n",
+                
+                # All devices
+                "M-SEARCH * HTTP/1.1\r\n"
+                "HOST: 239.255.255.250:1900\r\n"
+                "MAN: \"ssdp:discover\"\r\n"
+                "ST: ssdp:all\r\n"
+                "MX: 5\r\n\r\n"
+            ]
             
-            # SSDP discover message
-            ssdp_request = (
+            discovered_devices = []
+            
+            for i, ssdp_request in enumerate(ssdp_requests):
+                self.logger.debug(f"Sending SSDP request {i+1}/{len(ssdp_requests)}")
+                
+                # Create socket with enhanced configuration
+                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                sock.settimeout(8)
+                
+                try:
+                    # Enhanced socket configuration
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+                    
+                    # Try different binding approaches
+                    try:
+                        sock.bind(('', 0))  # Bind to any available port
+                    except:
+                        try:
+                            sock.bind(('0.0.0.0', 0))  # Alternative binding
+                        except:
+                            pass  # Continue without binding
+                    
+                    # Send request multiple times for better delivery
+                    for attempt in range(3):
+                        try:
+                            sock.sendto(ssdp_request.encode('utf-8'), ('239.255.255.250', 1900))
+                            time.sleep(0.1)  # Small delay between sends
+                        except Exception as e:
+                            self.logger.debug(f"Send attempt {attempt+1} failed: {e}")
+                    
+                    # Collect responses with longer timeout
+                    start_time = time.time()
+                    while time.time() - start_time < 8:
+                        try:
+                            remaining_time = 8 - (time.time() - start_time)
+                            if remaining_time <= 0:
+                                break
+                            
+                            sock.settimeout(min(remaining_time, 2.0))
+                            response, addr = sock.recvfrom(2048)
+                            
+                            device_info = self._parse_ssdp_response(response, addr)
+                            if device_info:
+                                discovered_devices.append(device_info)
+                                self.logger.debug(f"Found device: {device_info}")
+                            
+                        except socket.timeout:
+                            continue
+                        except Exception as e:
+                            self.logger.debug(f"Response receive error: {e}")
+                            break
+                    
+                finally:
+                    sock.close()
+                
+                # Small delay between different request types
+                time.sleep(0.5)
+            
+            # Process discovered devices
+            if discovered_devices:
+                self.logger.info(f"Found {len(discovered_devices)} UPnP devices")
+                
+                # Try to find a compatible router
+                for device in discovered_devices:
+                    if self._test_device_compatibility(device):
+                        return True
+            
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Enhanced SSDP discovery failed: {e}")
+            return False
+    
+    def _discover_broadcast(self):
+        """Broadcast-based discovery for stubborn routers"""
+        try:
+            self.logger.debug("Trying broadcast discovery...")
+            
+            # Get local network information
+            local_ip = self._get_local_ip()
+            if not local_ip:
+                return False
+            
+            # Calculate broadcast address
+            ip_parts = local_ip.split('.')
+            broadcast_ip = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}.255"
+            
+            # Enhanced broadcast request
+            broadcast_request = (
+                "M-SEARCH * HTTP/1.1\r\n"
+                "HOST: 239.255.255.250:1900\r\n"
+                "MAN: \"ssdp:discover\"\r\n"
+                "ST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n"
+                "MX: 3\r\n"
+                "USER-AGENT: Plex RAR Bridge/1.0\r\n\r\n"
+            )
+            
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(5)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+            
+            try:
+                # Send to both multicast and broadcast
+                sock.sendto(broadcast_request.encode(), ('239.255.255.250', 1900))
+                sock.sendto(broadcast_request.encode(), (broadcast_ip, 1900))
+                
+                # Listen for responses
+                start_time = time.time()
+                while time.time() - start_time < 5:
+                    try:
+                        response, addr = sock.recvfrom(2048)
+                        device_info = self._parse_ssdp_response(response, addr)
+                        if device_info and self._test_device_compatibility(device_info):
+                            return True
+                    except socket.timeout:
+                        continue
+                    except Exception as e:
+                        self.logger.debug(f"Broadcast response error: {e}")
+                        break
+                        
+            finally:
+                sock.close()
+            
+            return False
+            
+        except Exception as e:
+            self.logger.debug(f"Broadcast discovery failed: {e}")
+            return False
+    
+    def _discover_multicast(self):
+        """Enhanced multicast discovery with better socket configuration"""
+        try:
+            self.logger.debug("Trying enhanced multicast discovery...")
+            
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(5)
+            
+            # Enhanced multicast configuration
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            
+            try:
+                # Join multicast group
+                mreq = struct.pack('4sl', socket.inet_aton('239.255.255.250'), socket.INADDR_ANY)
+                sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+                
+                # Set multicast TTL
+                sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 2)
+                
+                # Enhanced multicast request
+                multicast_request = (
+                    "M-SEARCH * HTTP/1.1\r\n"
+                    "HOST: 239.255.255.250:1900\r\n"
+                    "MAN: \"ssdp:discover\"\r\n"
+                    "ST: urn:schemas-upnp-org:device:InternetGatewayDevice:1\r\n"
+                    "MX: 3\r\n"
+                    "USER-AGENT: Windows/10.0 UPnP/1.0 Plex RAR Bridge/1.0\r\n\r\n"
+                )
+                
+                sock.sendto(multicast_request.encode(), ('239.255.255.250', 1900))
+                
+                # Listen for responses
+                start_time = time.time()
+                while time.time() - start_time < 5:
+                    try:
+                        response, addr = sock.recvfrom(2048)
+                        device_info = self._parse_ssdp_response(response, addr)
+                        if device_info and self._test_device_compatibility(device_info):
+                            return True
+                    except socket.timeout:
+                        continue
+                    except Exception as e:
+                        self.logger.debug(f"Multicast response error: {e}")
+                        break
+                        
+            finally:
+                sock.close()
+            
+            return False
+            
+        except Exception as e:
+            self.logger.debug(f"Multicast discovery failed: {e}")
+            return False
+    
+    def _discover_legacy(self):
+        """Legacy discovery method for older routers"""
+        try:
+            self.logger.debug("Trying legacy discovery...")
+            
+            # Simple legacy request
+            legacy_request = (
                 "M-SEARCH * HTTP/1.1\r\n"
                 "HOST: 239.255.255.250:1900\r\n"
                 "MAN: \"ssdp:discover\"\r\n"
@@ -75,265 +312,319 @@ class UPnPPortManager:
                 "MX: 3\r\n\r\n"
             )
             
-            # Create socket with proper configuration
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            sock.settimeout(self.timeout)
+            sock.settimeout(10)  # Longer timeout for legacy
             
-            # Enable broadcast and reuse address
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-            
-            # Try to bind to local interface
             try:
-                sock.bind(('', 0))
-            except Exception as e:
-                self.logger.warning(f"Socket bind failed: {e}")
-            
-            # Send SSDP request multiple times to improve discovery
-            for attempt in range(3):
-                try:
-                    sock.sendto(ssdp_request.encode(), ('239.255.255.250', 1900))
-                    self.logger.debug(f"SSDP discovery attempt {attempt + 1}")
-                    time.sleep(0.1)  # Small delay between attempts
-                except Exception as e:
-                    self.logger.warning(f"SSDP send attempt {attempt + 1} failed: {e}")
-            
-            # Wait for responses (can be multiple)
-            responses = []
-            start_time = time.time()
-            
-            while time.time() - start_time < self.timeout:
-                try:
-                    # Adjust timeout for remaining time
-                    remaining_time = self.timeout - (time.time() - start_time)
-                    if remaining_time <= 0:
-                        break
-                    
-                    sock.settimeout(min(remaining_time, 1.0))
-                    response, addr = sock.recvfrom(1024)
-                    responses.append((response, addr))
-                    self.logger.debug(f"Received UPnP response from {addr}")
-                    
-                except socket.timeout:
-                    # Timeout waiting for this response, but continue listening
-                    continue
-                except Exception as e:
-                    self.logger.debug(f"Error receiving response: {e}")
-                    break
-            
-            sock.close()
-            
-            # Process all responses
-            if responses:
-                self.logger.info(f"Found {len(responses)} UPnP response(s)")
+                sock.sendto(legacy_request.encode(), ('239.255.255.250', 1900))
                 
-                for response, addr in responses:
-                    try:
-                        response_str = response.decode()
-                        location = None
-                        
-                        # Parse response headers
-                        for line in response_str.split('\r\n'):
-                            if line.upper().startswith('LOCATION:'):
-                                location = line.split(':', 1)[1].strip()
-                                break
-                        
-                        if location:
-                            self.logger.info(f"Found UPnP router at: {location}")
-                            if self._parse_router_info(location):
-                                return True
-                    except Exception as e:
-                        self.logger.warning(f"Error parsing response from {addr}: {e}")
-                        continue
+                # Wait longer for legacy routers
+                response, addr = sock.recvfrom(1024)
+                device_info = self._parse_ssdp_response(response, addr)
+                if device_info and self._test_device_compatibility(device_info):
+                    return True
+                    
+            finally:
+                sock.close()
             
-            self.logger.warning("No compatible UPnP router found (primary method)")
             return False
             
         except Exception as e:
-            self.logger.error(f"UPnP router discovery failed (primary method): {e}")
+            self.logger.debug(f"Legacy discovery failed: {e}")
             return False
     
-    def _discover_router_alternative(self):
-        """Alternative UPnP discovery method with different service types"""
+    def _discover_aggressive(self):
+        """Aggressive discovery method as last resort"""
         try:
-            self.logger.info("Discovering UPnP router (alternative method)...")
+            self.logger.debug("Trying aggressive discovery...")
             
-            # Try different service types
-            service_types = [
-                "urn:schemas-upnp-org:device:InternetGatewayDevice:2",
-                "urn:schemas-upnp-org:service:WANIPConnection:1",
-                "urn:schemas-upnp-org:service:WANPPPConnection:1",
-                "upnp:rootdevice",
-                "ssdp:all"
+            # Try common router IPs directly
+            router_ips = [
+                self._get_default_gateway(),
+                "192.168.1.1",
+                "192.168.0.1", 
+                "192.168.1.254",
+                "10.0.0.1",
+                "172.16.0.1"
             ]
             
-            for st in service_types:
-                self.logger.debug(f"Trying service type: {st}")
-                
-                ssdp_request = (
-                    "M-SEARCH * HTTP/1.1\r\n"
-                    "HOST: 239.255.255.250:1900\r\n"
-                    "MAN: \"ssdp:discover\"\r\n"
-                    f"ST: {st}\r\n"
-                    "MX: 3\r\n\r\n"
-                )
-                
-                # Create socket with multicast options
-                sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                sock.settimeout(5)  # Shorter timeout for alternative method
-                
-                # Set socket options for multicast
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                
-                # Enable multicast
-                try:
-                    mreq = struct.pack('4sl', socket.inet_aton('239.255.255.250'), socket.INADDR_ANY)
-                    sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-                except Exception as e:
-                    self.logger.debug(f"Multicast setup failed: {e}")
-                
-                try:
-                    sock.sendto(ssdp_request.encode(), ('239.255.255.250', 1900))
+            for router_ip in router_ips:
+                if not router_ip:
+                    continue
                     
-                    # Wait for response
-                    response, addr = sock.recvfrom(1024)
-                    response_str = response.decode()
-                    
-                    # Parse location
-                    location = None
-                    for line in response_str.split('\r\n'):
-                        if line.upper().startswith('LOCATION:'):
-                            location = line.split(':', 1)[1].strip()
-                            break
-                    
-                    if location:
-                        self.logger.info(f"Found UPnP device at: {location} (service: {st})")
-                        if self._parse_router_info(location):
-                            sock.close()
-                            return True
-                            
-                except socket.timeout:
-                    self.logger.debug(f"Timeout for service type: {st}")
-                except Exception as e:
-                    self.logger.debug(f"Error with service type {st}: {e}")
-                finally:
-                    sock.close()
+                # Try common UPnP ports
+                upnp_ports = [1900, 5000, 8080, 80]
+                
+                for port in upnp_ports:
+                    try:
+                        # Try to connect directly to potential UPnP service
+                        potential_urls = [
+                            f"http://{router_ip}:{port}/rootDesc.xml",
+                            f"http://{router_ip}:{port}/description.xml",
+                            f"http://{router_ip}:{port}/upnp/desc.xml",
+                            f"http://{router_ip}:{port}/igd.xml"
+                        ]
+                        
+                        for url in potential_urls:
+                            try:
+                                response = requests.get(url, timeout=3)
+                                if response.status_code == 200:
+                                    self.logger.debug(f"Found potential UPnP service at: {url}")
+                                    if self._parse_router_info(url):
+                                        return True
+                            except:
+                                continue
+                                
+                    except Exception as e:
+                        self.logger.debug(f"Aggressive discovery error for {router_ip}:{port}: {e}")
+                        continue
             
-            self.logger.warning("No compatible UPnP router found (alternative method)")
             return False
             
         except Exception as e:
-            self.logger.error(f"UPnP router discovery failed (alternative method): {e}")
+            self.logger.debug(f"Aggressive discovery failed: {e}")
+            return False
+    
+    def _parse_ssdp_response(self, response, addr):
+        """Parse SSDP response and extract device information"""
+        try:
+            response_str = response.decode('utf-8', errors='ignore')
+            device_info = {'addr': addr}
+            
+            # Parse response headers
+            for line in response_str.split('\r\n'):
+                if ':' in line:
+                    key, value = line.split(':', 1)
+                    key = key.strip().upper()
+                    value = value.strip()
+                    
+                    if key == 'LOCATION':
+                        device_info['location'] = value
+                    elif key == 'ST':
+                        device_info['service_type'] = value
+                    elif key == 'USN':
+                        device_info['usn'] = value
+                    elif key == 'SERVER':
+                        device_info['server'] = value
+            
+            return device_info if 'location' in device_info else None
+            
+        except Exception as e:
+            self.logger.debug(f"Error parsing SSDP response: {e}")
+            return None
+    
+    def _test_device_compatibility(self, device_info):
+        """Test if a discovered device is a compatible UPnP router"""
+        try:
+            location = device_info.get('location')
+            if not location:
+                return False
+            
+            self.logger.debug(f"Testing device compatibility: {location}")
+            
+            # Try to parse the device description
+            return self._parse_router_info(location)
+            
+        except Exception as e:
+            self.logger.debug(f"Device compatibility test failed: {e}")
             return False
     
     def _parse_router_info(self, location):
-        """Parse router information from UPnP location"""
+        """Enhanced router information parsing with better compatibility"""
         try:
-            self.logger.debug(f"Parsing UPnP device info from: {location}")
+            self.logger.debug(f"Parsing router info from: {location}")
             
-            # Get device description
-            response = requests.get(location, timeout=self.timeout)
+            # Get device description with enhanced headers
+            headers = {
+                'User-Agent': 'Windows/10.0 UPnP/1.0 Plex RAR Bridge/1.0',
+                'Accept': 'text/xml, application/xml, */*',
+                'Connection': 'close'
+            }
+            
+            response = requests.get(location, timeout=self.timeout, headers=headers)
             response.raise_for_status()
             
-            self.logger.debug(f"UPnP response status: {response.status_code}")
-            
-            # Parse XML with better error handling
+            # Parse XML with enhanced error handling
             try:
                 root = ET.fromstring(response.content)
             except ET.ParseError as e:
-                self.logger.error(f"XML parsing error: {e}")
+                self.logger.debug(f"XML parsing error: {e}")
                 return False
             
-            # Find service information with multiple namespace attempts
-            namespace_attempts = [
-                {'device': 'urn:schemas-upnp-org:device-1-0'},
-                {'device': 'urn:schemas-upnp-org:device-1-0:device'},
-                {}  # No namespace
-            ]
-            
-            services = []
-            for ns in namespace_attempts:
-                try:
-                    if ns:
-                        services = root.findall('.//device:service', ns)
-                    else:
-                        services = root.findall('.//service')
-                    if services:
-                        break
-                except Exception as e:
-                    self.logger.debug(f"Namespace attempt failed: {e}")
-                    continue
+            # Enhanced service discovery with multiple approaches
+            services = self._find_services_enhanced(root)
             
             if not services:
-                self.logger.warning("No services found in UPnP device description")
+                self.logger.debug("No services found in device description")
                 return False
             
-            self.logger.debug(f"Found {len(services)} UPnP services")
+            self.logger.debug(f"Found {len(services)} services")
             
-            # Look for WANIPConnection service first (preferred)
-            for service in services:
-                try:
-                    service_type_elem = service.find('serviceType') or service.find('.//serviceType')
-                    if service_type_elem is not None:
-                        service_type = service_type_elem.text
-                        self.logger.debug(f"Found service type: {service_type}")
-                        
-                        if service_type and 'WANIPConnection' in service_type:
-                            control_url_elem = service.find('controlURL') or service.find('.//controlURL')
-                            if control_url_elem is not None:
-                                control_url = control_url_elem.text
-                                
-                                # Build full control URL
-                                if control_url.startswith('/'):
-                                    base_url = location.rsplit('/', 1)[0]
-                                    self.control_url = f"{base_url}{control_url}"
-                                else:
-                                    self.control_url = control_url
-                                
-                                self.service_type = service_type
-                                
-                                self.logger.info(f"UPnP control URL: {self.control_url}")
-                                return True
-                except Exception as e:
-                    self.logger.debug(f"Error processing service: {e}")
-                    continue
+            # Try to find compatible service with priority order
+            service_priorities = [
+                'WANIPConnection',
+                'WANPPPConnection', 
+                'WANCommonInterfaceConfig',
+                'Layer3Forwarding'
+            ]
             
-            # Fallback to WANPPPConnection
-            for service in services:
-                try:
-                    service_type_elem = service.find('serviceType') or service.find('.//serviceType')
-                    if service_type_elem is not None:
-                        service_type = service_type_elem.text
-                        
-                        if service_type and 'WANPPPConnection' in service_type:
-                            control_url_elem = service.find('controlURL') or service.find('.//controlURL')
-                            if control_url_elem is not None:
-                                control_url = control_url_elem.text
-                                
-                                # Build full control URL
-                                if control_url.startswith('/'):
-                                    base_url = location.rsplit('/', 1)[0]
-                                    self.control_url = f"{base_url}{control_url}"
-                                else:
-                                    self.control_url = control_url
-                                
-                                self.service_type = service_type
-                                
-                                self.logger.info(f"UPnP control URL (PPP): {self.control_url}")
-                                return True
-                except Exception as e:
-                    self.logger.debug(f"Error processing PPP service: {e}")
-                    continue
-                        
-        except requests.RequestException as e:
-            self.logger.error(f"Failed to fetch UPnP device description: {e}")
+            for priority_service in service_priorities:
+                for service in services:
+                    if self._test_service_compatibility(service, priority_service, location):
+                        return True
+            
+            return False
+            
         except Exception as e:
-            self.logger.error(f"Failed to parse router info: {e}")
+            self.logger.debug(f"Router info parsing failed: {e}")
+            return False
+    
+    def _find_services_enhanced(self, root):
+        """Enhanced service discovery with multiple XML parsing strategies"""
+        services = []
         
-        return False
+        # Multiple parsing strategies
+        parsing_strategies = [
+            # Strategy 1: Direct service search
+            lambda root: root.findall('.//service'),
+            
+            # Strategy 2: Namespace-aware search
+            lambda root: root.findall('.//{urn:schemas-upnp-org:device-1-0}service'),
+            
+            # Strategy 3: Device-specific search
+            lambda root: root.findall('.//device/serviceList/service'),
+            
+            # Strategy 4: Nested device search
+            lambda root: root.findall('.//deviceList/device/serviceList/service'),
+            
+            # Strategy 5: Alternative namespace
+            lambda root: root.findall('.//{urn:schemas-upnp-org:device:1:0}service')
+        ]
+        
+        for strategy in parsing_strategies:
+            try:
+                found_services = strategy(root)
+                if found_services:
+                    services.extend(found_services)
+            except Exception as e:
+                self.logger.debug(f"Service parsing strategy failed: {e}")
+                continue
+        
+        # Remove duplicates
+        unique_services = []
+        seen_services = set()
+        
+        for service in services:
+            service_id = self._get_service_id(service)
+            if service_id and service_id not in seen_services:
+                unique_services.append(service)
+                seen_services.add(service_id)
+        
+        return unique_services
+    
+    def _get_service_id(self, service):
+        """Get a unique identifier for a service"""
+        try:
+            service_type = self._get_service_element_text(service, 'serviceType')
+            service_id = self._get_service_element_text(service, 'serviceId')
+            return f"{service_type}:{service_id}" if service_type and service_id else None
+        except:
+            return None
+    
+    def _get_service_element_text(self, service, element_name):
+        """Get text from service element with multiple fallback strategies"""
+        try:
+            # Try direct find
+            elem = service.find(element_name)
+            if elem is not None and elem.text:
+                return elem.text.strip()
+            
+            # Try with namespace
+            elem = service.find(f'.//{{urn:schemas-upnp-org:device-1-0}}{element_name}')
+            if elem is not None and elem.text:
+                return elem.text.strip()
+            
+            # Try recursive search
+            for child in service.iter():
+                if child.tag.endswith(element_name) and child.text:
+                    return child.text.strip()
+            
+            return None
+            
+        except Exception as e:
+            self.logger.debug(f"Error getting service element {element_name}: {e}")
+            return None
+    
+    def _test_service_compatibility(self, service, target_service, location):
+        """Test if a service is compatible for port forwarding"""
+        try:
+            service_type = self._get_service_element_text(service, 'serviceType')
+            control_url = self._get_service_element_text(service, 'controlURL')
+            
+            if not service_type or not control_url:
+                return False
+            
+            # Check if this is the service we're looking for
+            if target_service not in service_type:
+                return False
+            
+            # Build full control URL
+            if control_url.startswith('/'):
+                base_url = '/'.join(location.split('/')[:-1])
+                self.control_url = f"{base_url}{control_url}"
+            else:
+                self.control_url = control_url
+            
+            self.service_type = service_type
+            
+            self.logger.info(f"Found compatible UPnP service: {service_type}")
+            self.logger.info(f"Control URL: {self.control_url}")
+            
+            return True
+            
+        except Exception as e:
+            self.logger.debug(f"Service compatibility test failed: {e}")
+            return False
+    
+    def _get_default_gateway(self):
+        """Get the default gateway IP address"""
+        try:
+            import subprocess
+            import re
+            
+            # Windows route command
+            result = subprocess.run(['route', 'print', '0.0.0.0'], 
+                                  capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0:
+                # Look for default route
+                for line in result.stdout.split('\n'):
+                    if '0.0.0.0' in line and 'Gateway' not in line:
+                        parts = line.split()
+                        if len(parts) >= 3:
+                            gateway = parts[2]
+                            if re.match(r'^(\d{1,3}\.){3}\d{1,3}$', gateway):
+                                return gateway
+            
+            # Fallback to ipconfig
+            result = subprocess.run(['ipconfig'], capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                for line in result.stdout.split('\n'):
+                    if 'Default Gateway' in line:
+                        parts = line.split(':')
+                        if len(parts) > 1:
+                            gateway = parts[1].strip()
+                            if re.match(r'^(\d{1,3}\.){3}\d{1,3}$', gateway):
+                                return gateway
+            
+            return None
+            
+        except Exception as e:
+            self.logger.debug(f"Gateway detection failed: {e}")
+            return None
     
     def add_port_mapping(self, port, description="Plex RAR Bridge VFS"):
-        """Add port forwarding rule"""
+        """Enhanced port mapping with better compatibility"""
         if not self.enabled or not self.control_url:
             return False
             
@@ -344,8 +635,8 @@ class UPnPPortManager:
                 self.logger.error("Could not determine local IP address")
                 return False
             
-            # SOAP request for port mapping
-            soap_body = f"""<?xml version="1.0"?>
+            # Enhanced SOAP request with better compatibility
+            soap_body = f"""<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"
             s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
   <s:Body>
@@ -363,8 +654,10 @@ class UPnPPortManager:
 </s:Envelope>"""
             
             headers = {
-                'Content-Type': 'text/xml; charset="utf-8"',
-                'SOAPAction': f'"{self.service_type}#AddPortMapping"'
+                'Content-Type': 'text/xml; charset=utf-8',
+                'SOAPAction': f'"{self.service_type}#AddPortMapping"',
+                'User-Agent': 'Windows/10.0 UPnP/1.0 Plex RAR Bridge/1.0',
+                'Connection': 'close'
             }
             
             response = requests.post(self.control_url, data=soap_body, headers=headers, timeout=self.timeout)
@@ -375,6 +668,7 @@ class UPnPPortManager:
                 return True
             else:
                 self.logger.error(f"UPnP port mapping failed: {response.status_code}")
+                self.logger.debug(f"Response: {response.text}")
                 return False
                 
         except Exception as e:
@@ -382,13 +676,13 @@ class UPnPPortManager:
             return False
     
     def remove_port_mapping(self, port):
-        """Remove port forwarding rule"""
+        """Enhanced port removal with better compatibility"""
         if not self.enabled or not self.control_url:
             return False
             
         try:
-            # SOAP request for removing port mapping
-            soap_body = f"""<?xml version="1.0"?>
+            # Enhanced SOAP request for removing port mapping
+            soap_body = f"""<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"
             s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
   <s:Body>
@@ -401,8 +695,10 @@ class UPnPPortManager:
 </s:Envelope>"""
             
             headers = {
-                'Content-Type': 'text/xml; charset="utf-8"',
-                'SOAPAction': f'"{self.service_type}#DeletePortMapping"'
+                'Content-Type': 'text/xml; charset=utf-8',
+                'SOAPAction': f'"{self.service_type}#DeletePortMapping"',
+                'User-Agent': 'Windows/10.0 UPnP/1.0 Plex RAR Bridge/1.0',
+                'Connection': 'close'
             }
             
             response = requests.post(self.control_url, data=soap_body, headers=headers, timeout=self.timeout)
@@ -510,8 +806,14 @@ class UPnPPortManager:
             'control_url': self.control_url,
             'service_type': self.service_type,
             'forwarded_ports': dict(self.forwarded_ports),
-            'renewal_active': self.renewal_thread is not None and self.renewal_thread.is_alive()
+            'renewal_active': self.renewal_thread is not None and self.renewal_thread.is_alive(),
+            'discovered_devices': len(self.discovered_devices)
         }
+
+# Maintain backward compatibility
+class UPnPPortManager(EnhancedUPnPPortManager):
+    """Backward compatibility wrapper"""
+    pass
 
 class UPnPIntegratedVFS:
     """Wrapper class that integrates UPnP with the RAR VFS"""

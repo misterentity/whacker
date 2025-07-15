@@ -494,7 +494,7 @@ You can assign different processing modes to different directories based on your
             
             def test_upnp_worker():
                 try:
-                    # Import UPnP manager
+                    # Import enhanced UPnP manager
                     from upnp_port_manager import UPnPPortManager
                     import logging
                     
@@ -512,11 +512,13 @@ You can assign different processing modes to different directories based on your
                         }
                     }
                     
-                    # Test UPnP
+                    # Test enhanced UPnP
                     upnp = UPnPPortManager(config, logger)
                     
                     if upnp.discover_router():
-                        self.upnp_status_label.config(text="✅ UPnP: Router discovered and ready", foreground='green')
+                        status = upnp.get_status()
+                        router_ip = status.get('control_url', '').split('//')[1].split(':')[0] if status.get('control_url') else 'Unknown'
+                        self.upnp_status_label.config(text=f"✅ UPnP: Router discovered at {router_ip} and ready", foreground='green')
                     else:
                         self.upnp_status_label.config(text="❌ UPnP: No compatible router found", foreground='red')
                         
@@ -559,9 +561,10 @@ You can assign different processing modes to different directories based on your
                         status = upnp.get_status()
                         control_url = status.get('control_url', 'Unknown')
                         service_type = status.get('service_type', 'Unknown')
+                        router_ip = control_url.split('//')[1].split(':')[0] if '//' in control_url else 'Unknown'
                         
                         self.upnp_status_label.config(
-                            text=f"✅ UPnP: Found router - {control_url[:50]}...", 
+                            text=f"✅ UPnP: Found router at {router_ip} - {service_type.split(':')[-1]}", 
                             foreground='green'
                         )
                     else:
@@ -630,7 +633,9 @@ You can assign different processing modes to different directories based on your
    • Wait 2-3 minutes and test again
 
 Your router IP: {router_ip}
-Your computer IP: {local_ip}"""
+Your computer IP: {local_ip}
+
+Note: Enhanced UPnP discovery with multiple methods attempted."""
             
             # Show dialog in main thread
             self.parent.after(0, lambda: messagebox.showinfo("UPnP Troubleshooting", message))
