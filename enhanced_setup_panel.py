@@ -1360,7 +1360,7 @@ Note: Enhanced UPnP discovery with multiple methods attempted."""
                 self.rar2fs_status_label.config(text=f"❌ rar2fs: Error - {e}", foreground='red')
                 messagebox.showerror("Installation Error", f"An error occurred during installation:\n\n{e}")
         
-        # Run installation in a separate thread to prevent GUI freezing
+        # Actually call the installation function!
         import threading
         install_thread = threading.Thread(target=install_in_thread, daemon=True)
         install_thread.start()
