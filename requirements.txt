@@ -9,6 +9,13 @@ tqdm>=4.64.0
 lxml>=4.9.0
 psutil>=5.9.0
 
+# FTP functionality dependencies
+pycurl>=7.45.0
+certifi>=2023.0.0
+
+# SSL/TLS support
+cryptography>=41.0.0
+
 # Optional GUI dependencies
 pystray>=0.19.0
 Pillow>=9.0.0
