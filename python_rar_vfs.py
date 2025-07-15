@@ -236,30 +236,9 @@ class RarVirtualFileSystem:
             handler = self._create_request_handler()
             self.http_server = HTTPServer(('0.0.0.0', self.server_port), handler)
             
-            # Try to enable HTTPS
-            cert_file, key_file = self._create_self_signed_cert()
-            if cert_file and key_file:
-                try:
-                    # Create SSL context
-                    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-                    context.load_cert_chain(cert_file, key_file)
-                    
-                    # Wrap the server socket with SSL
-                    self.http_server.socket = context.wrap_socket(
-                        self.http_server.socket, 
-                        server_side=True
-                    )
-                    
-                    self.use_https = True
-                    self.logger.info(f"RAR VFS HTTPS server started on 0.0.0.0:{self.server_port}")
-                    
-                except Exception as e:
-                    self.logger.warning(f"Failed to enable HTTPS, falling back to HTTP: {e}")
-                    self.use_https = False
-                    self.logger.info(f"RAR VFS HTTP server started on 0.0.0.0:{self.server_port}")
-            else:
-                self.use_https = False
-                self.logger.info(f"RAR VFS HTTP server started on 0.0.0.0:{self.server_port}")
+            # Use HTTP for better Plex compatibility on local networks
+            self.use_https = False
+            self.logger.info(f"RAR VFS HTTP server started on 0.0.0.0:{self.server_port}")
             
             self.http_thread = threading.Thread(target=self._run_server, daemon=True)
             self.http_thread.start()
