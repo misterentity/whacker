@@ -112,20 +112,34 @@ class RarVirtualFileSystem:
         for port in range(start_port, start_port + 100):
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.bind(('localhost', port))
+                    s.bind(('0.0.0.0', port))
                     return port
             except OSError:
                 continue
         raise Exception("No available ports found")
     
+    def _get_server_ip(self):
+        """Get the server IP address for HTTP URLs"""
+        import socket
+        try:
+            # Try to get the actual network IP address
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                # Connect to a remote address (doesn't actually send data)
+                s.connect(("8.8.8.8", 80))
+                ip = s.getsockname()[0]
+                return ip
+        except Exception:
+            # Fallback to localhost if network detection fails
+            return "127.0.0.1"
+    
     def _start_http_server(self):
         """Start HTTP server for serving virtual files"""
         try:
             handler = self._create_request_handler()
-            self.http_server = HTTPServer(('localhost', self.server_port), handler)
+            self.http_server = HTTPServer(('0.0.0.0', self.server_port), handler)
             self.http_thread = threading.Thread(target=self._run_server, daemon=True)
             self.http_thread.start()
-            self.logger.info(f"RAR VFS HTTP server started on port {self.server_port}")
+            self.logger.info(f"RAR VFS HTTP server started on 0.0.0.0:{self.server_port}")
             
             # Setup UPnP port forwarding
             self.upnp_vfs.setup_port_forwarding(self.server_port)
@@ -367,8 +381,9 @@ class RarArchiveHandler:
                             virtual_file = RarVirtualFile(self.archive_path, file_info, self.vfs)
                             self.virtual_files.append(virtual_file)
                             
-                            # Create HTTP URL for the file
-                            http_url = f"http://localhost:{self.vfs.server_port}/{virtual_file.virtual_path}"
+                            # Create HTTP URL for the file using actual network IP
+                            server_ip = self.vfs._get_server_ip()
+                            http_url = f"http://{server_ip}:{self.vfs.server_port}/{virtual_file.virtual_path}"
                             
                             # Create link file that points to HTTP URL
                             self._create_link_file(virtual_file, http_url)
