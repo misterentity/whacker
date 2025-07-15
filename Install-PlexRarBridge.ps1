@@ -108,9 +108,14 @@ function Install-NSSM {
 
 function Install-Service {
     Write-Log 'Installing Windows Service'
-    $nssmPath = Join-Path $InstallPath 'nssm\nssm.exe'
+    
+    # Convert installation path to 8.3 format to avoid space issues
+    $shortInstallPath = (cmd /c "for %I in (`"$InstallPath`") do @echo %~sI").Trim()
+    Write-Log "Using short path format: $shortInstallPath"
+    
+    $nssmPath = Join-Path $shortInstallPath 'nssm\nssm.exe'
     $pythonPath = (Get-Command python).Source
-    $scriptPath = Join-Path $InstallPath 'plex_rar_bridge.py'
+    $scriptPath = Join-Path $shortInstallPath 'plex_rar_bridge.py'
     
     # Remove existing service if it exists
     try {
@@ -118,14 +123,14 @@ function Install-Service {
         & $nssmPath remove $ServiceName confirm 2>$null
     } catch { }
     
-    # Install new service
+    # Install new service using 8.3 paths (no quotes needed)
     & $nssmPath install $ServiceName $pythonPath $scriptPath
     & $nssmPath set $ServiceName DisplayName "Plex RAR Bridge Service"
     & $nssmPath set $ServiceName Description "Automatic RAR extraction service for Plex Media Server"
     & $nssmPath set $ServiceName Start SERVICE_AUTO_START
-    & $nssmPath set $ServiceName AppDirectory $InstallPath
-    & $nssmPath set $ServiceName AppStdout "$InstallPath\logs\service.log"
-    & $nssmPath set $ServiceName AppStderr "$InstallPath\logs\service-error.log"
+    & $nssmPath set $ServiceName AppDirectory $shortInstallPath
+    & $nssmPath set $ServiceName AppStdout "$shortInstallPath\logs\service.log"
+    & $nssmPath set $ServiceName AppStderr "$shortInstallPath\logs\service-error.log"
     & $nssmPath set $ServiceName AppRotateFiles 1
     & $nssmPath set $ServiceName AppRotateOnline 1
     & $nssmPath set $ServiceName AppRotateSeconds 86400
