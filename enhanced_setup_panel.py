@@ -453,6 +453,7 @@ You can assign different processing modes to different directories based on your
         install_controls_frame.pack(fill=tk.X, pady=5)
         
         ttk.Button(install_controls_frame, text="🚀 Auto-Install rar2fs", command=self.auto_install_rar2fs).pack(side=tk.LEFT, padx=5)
+        ttk.Button(install_controls_frame, text="⚙️ Advanced Compilation", command=self.advanced_install_rar2fs).pack(side=tk.LEFT, padx=5)
         ttk.Button(install_controls_frame, text="🧪 Test rar2fs", command=self.test_rar2fs).pack(side=tk.LEFT, padx=5)
         ttk.Button(install_controls_frame, text="🔧 Check Dependencies", command=self.check_rar2fs_dependencies).pack(side=tk.LEFT, padx=5)
         
@@ -1491,6 +1492,149 @@ Note: Enhanced UPnP discovery with multiple methods attempted."""
         # Actually call the installation function!
         import threading
         install_thread = threading.Thread(target=install_in_thread, daemon=True)
+        install_thread.start()
+    
+    def advanced_install_rar2fs(self):
+        """Advanced rar2fs installation - compile from source"""
+        import ctypes
+        import sys
+        import subprocess
+        import os
+        
+        # Check if running as administrator
+        def is_admin():
+            try:
+                return ctypes.windll.shell32.IsUserAnAdmin()
+            except:
+                return False
+        
+        if not is_admin():
+            response = messagebox.askyesno(
+                "Administrator Required", 
+                "Advanced rar2fs compilation requires administrator privileges.\n\n"
+                "The compilation process needs to:\n"
+                "• Install WinFSP (Windows File System Proxy)\n"
+                "• Install Cygwin with build tools (2-4 GB)\n"
+                "• Download and compile UnRAR library\n"
+                "• Download and compile rar2fs from source\n"
+                "• Write to system directories\n\n"
+                "This process may take 30-60 minutes.\n\n"
+                "Would you like to restart the Enhanced Setup Panel as administrator?"
+            )
+            
+            if response:
+                try:
+                    # Get the current script path
+                    current_script = sys.argv[0]
+                    
+                    # Restart as administrator
+                    ctypes.windll.shell32.ShellExecuteW(
+                        None, 
+                        "runas", 
+                        sys.executable, 
+                        f'"{current_script}"', 
+                        None, 
+                        1
+                    )
+                    
+                    # Close current instance
+                    self.parent.quit()
+                    
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to restart as administrator: {e}")
+            
+            return
+        
+        # Running as admin, proceed with advanced installation
+        def advanced_install_in_thread():
+            try:
+                self.rar2fs_status_label.config(text="🔄 Starting advanced compilation...", foreground='blue')
+                self.parent.update()
+                
+                # Check if advanced installer exists
+                installer_path = os.path.join(os.path.dirname(__file__), "advanced_rar2fs_installer.py")
+                if not os.path.exists(installer_path):
+                    # Try installation directory
+                    installer_path = r"C:\Program Files\PlexRarBridge\advanced_rar2fs_installer.py"
+                    if not os.path.exists(installer_path):
+                        raise FileNotFoundError("advanced_rar2fs_installer.py not found")
+                
+                # Normalize the path to avoid any quote issues
+                installer_path = os.path.normpath(installer_path)
+                
+                # Show warning about long installation time
+                response = messagebox.askyesno(
+                    "Advanced Compilation Warning",
+                    "Advanced rar2fs compilation from source:\n\n"
+                    "⏱️ Time: 30-60 minutes\n"
+                    "💾 Space: 2-4 GB additional disk space\n"
+                    "🌐 Network: Will download Cygwin, UnRAR, and rar2fs sources\n\n"
+                    "This will install:\n"
+                    "• Complete Cygwin development environment\n"
+                    "• UnRAR library compiled from source\n"
+                    "• rar2fs compiled from latest source code\n\n"
+                    "Continue with advanced compilation?"
+                )
+                
+                if not response:
+                    self.rar2fs_status_label.config(text="❌ Advanced compilation cancelled", foreground='orange')
+                    return
+                
+                self.rar2fs_status_label.config(text="🔄 Running advanced installer...", foreground='blue')
+                self.parent.update()
+                
+                # Run the advanced installer in a new command window for better visibility
+                # Create a temporary batch file to avoid command line escaping issues
+                import tempfile
+                temp_bat = tempfile.NamedTemporaryFile(mode='w', suffix='.bat', delete=False)
+                temp_bat.write('@echo off\n')
+                temp_bat.write('echo Starting Advanced rar2fs Compilation...\n')
+                temp_bat.write('echo.\n')
+                temp_bat.write(f'python "{installer_path}"\n')
+                temp_bat.write('echo.\n')
+                temp_bat.write('if errorlevel 1 (\n')
+                temp_bat.write('    echo ERROR: Installation failed!\n')
+                temp_bat.write(') else (\n')
+                temp_bat.write('    echo SUCCESS: Installation completed!\n')
+                temp_bat.write(')\n')
+                temp_bat.write('echo.\n')
+                temp_bat.write('pause\n')
+                temp_bat.close()
+                
+                # Run the batch file in a new command window
+                cmd = ['cmd', '/c', 'start', 'cmd', '/k', temp_bat.name]
+                result = subprocess.run(cmd)
+                
+                # Give user time to see the installation process
+                self.rar2fs_status_label.config(text="🔄 Advanced compilation in progress...", foreground='blue')
+                messagebox.showinfo(
+                    "Advanced Compilation Started",
+                    "Advanced rar2fs compilation has started in a new command window.\n\n"
+                    "Please monitor the command window for progress.\n"
+                    "The installation may take 30-60 minutes to complete.\n\n"
+                    "Click OK to continue using the Enhanced Setup Panel.\n"
+                    "You can check the rar2fs status later by clicking 'Refresh All Status'."
+                )
+                
+                # Reset status to allow user to check later
+                self.rar2fs_status_label.config(text="🔄 Advanced compilation started (check command window)", foreground='blue')
+                    
+            except FileNotFoundError:
+                self.rar2fs_status_label.config(text="❌ Advanced installer not found", foreground='red')
+                messagebox.showerror(
+                    "Installer Error", 
+                    "advanced_rar2fs_installer.py not found.\n\n"
+                    "Please ensure the advanced installer is available in:\n"
+                    f"• {os.path.dirname(__file__)}/\n"
+                    "• C:/Program Files/PlexRarBridge/"
+                )
+            except Exception as e:
+                self.rar2fs_status_label.config(text=f"❌ Advanced compilation error", foreground='red')
+                messagebox.showerror("Advanced Installation Error", f"An error occurred:\n\n{e}")
+        
+        # Actually call the advanced installation function!
+        import threading
+        install_thread = threading.Thread(target=advanced_install_in_thread, daemon=True)
         install_thread.start()
     
     def browse_mount_base(self):
