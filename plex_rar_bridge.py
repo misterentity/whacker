@@ -927,16 +927,10 @@ class PlexRarBridge:
             
             self.logger.info(f"Starting Python VFS mount: {first_volume.name}")
             
-            # Test archive integrity first
-            test_result = self.test_archive_integrity(first_volume)
-            
-            if test_result == "encrypted":
-                # Move to failed directory
-                self._move_archive_to_failed(first_volume)
-                return
-            elif test_result != "ok":
-                self.logger.error(f"Archive test failed: {first_volume.name}")
-                return
+            # Skip archive integrity testing for Python VFS mode
+            # Python VFS can handle serving files directly from archives
+            # without needing to extract them first
+            self.logger.info(f"Skipping integrity test for Python VFS mode: {first_volume.name}")
             
             # Mount the archive using Python VFS
             mount_info = self.rar2fs_handler.mount_archive(first_volume, target_info)
