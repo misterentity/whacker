@@ -1,24 +1,32 @@
 # Active Context: Plex RAR Bridge Enhanced Edition
 
 ## Current Work Focus
-Successfully resolved Python VFS processing mode issues and restored full functionality.
+Successfully completed upgrade installation of local PlexRarBridge installation.
 
 ## Recent Activity
-- **Installation Completed**: Successfully ran Install-PlexRarBridge.ps1
-- **Version**: Plex RAR Bridge v2.1.1 installed
-- **Service Status**: PlexRarBridge Windows service installed and running
-- **GUI Status**: Monitor started successfully
-- **Processing Mode**: python_vfs mode active and working
-- **Features**: Enhanced UPnP support included
+- **rar2fs Installer Verification**: Comprehensive testing completed for rar2fs installer functionality
+- **Admin Privilege Requirements**: Confirmed that rar2fs installation requires administrator privileges
+- **Installation Upgrade**: Successfully upgraded local installation using manual file copy approach
+- **Dependencies Updated**: Python dependencies upgraded to latest versions
+- **Service Status**: PlexRarBridge Windows service running successfully after upgrade
 
-## Latest Development: Python VFS Issue Resolution
-- **Problem Identified**: System was falling back to extraction mode instead of using Python VFS
-- **Root Causes Found**:
-  1. **Database Error**: `sqlite3.OperationalError: no such table: file_hashes`
-  2. **Configuration Mismatch**: Enhanced setup config not synced with main config
-  3. **Processing Mode Override**: Fallback to extraction on errors
-- **Solution Implemented**: Created and ran comprehensive fix script
-- **Current Status**: ✅ **Python VFS fully functional**
+## Latest Development: Installation Upgrade Completed
+- **Verification Process**: Created and ran comprehensive tests for rar2fs installer functionality
+- **Admin Requirements**: Confirmed that rar2fs installation needs administrator privileges for:
+  1. **MSI Installation**: WinFSP installer requires system-wide MSI installation
+  2. **Program Files Access**: Writing to C:/Program Files/ directory requires admin
+  3. **Windows Services**: Installing/starting Windows services requires admin
+  4. **Driver Installation**: WinFSP includes filesystem drivers requiring admin
+- **Upgrade Method**: Used manual file copy approach after dependency installation failed
+- **Current Status**: ✅ **Upgrade completed successfully**
+
+## Installation Upgrade Results
+- **Dependencies**: Updated to latest versions (requests 2.32.4, lxml 6.0.0, certifi 2025.7.14, cryptography 45.0.5, etc.)
+- **Configuration Backup**: Created backup folder with previous configuration files
+- **File Deployment**: All updated Python files copied to installation directory
+- **rar2fs Installer**: Now available in installation directory for GUI use
+- **Memory Bank**: Documentation copied to installation directory
+- **Service Status**: PlexRarBridge service running (STATE: 4 RUNNING)
 
 ## Python VFS Status: ✅ WORKING
 - **HTTP Server**: Running on port 8765 ✅
