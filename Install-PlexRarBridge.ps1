@@ -1,6 +1,6 @@
 # =====================================================================
-#  Install-PlexRarBridge.ps1   v2.1.1  (2025-07-15)
-#  Robust installer for Plex-RAR-Bridge
+#  Install-PlexRarBridge.ps1   v2.2.0  (2025-07-15)
+#  Robust installer for Plex-RAR-Bridge with proper file deployment
 # =====================================================================
 
 [CmdletBinding()]
@@ -22,7 +22,7 @@ param(
 # ─── constants ────────────────────────────────────────────────────────
 $ErrorActionPreference = 'Stop'
 $AppName               = 'Plex RAR Bridge'
-$AppVersion            = '2.1.1'
+$AppVersion            = '2.2.0'
 $RequiredPythonVersion = '3.12'
 $LogPath               = "$env:TEMP\PlexRarBridge-Install.log"
 
@@ -84,9 +84,9 @@ function Install-UnRAR {
 
 function Install-NSSM {
     Write-Log 'Installing NSSM'
-    $nssmPath = '.\nssm\nssm.exe'
+    $tempNssmPath = '.\nssm\nssm.exe'
     
-    if (!(Test-Path $nssmPath)) {
+    if (!(Test-Path $tempNssmPath)) {
         $url = 'https://nssm.cc/release/nssm-2.24.zip'
         $zipPath = "$env:TEMP\nssm.zip"
         
@@ -97,18 +97,20 @@ function Install-NSSM {
         Expand-Archive -Path $zipPath -DestinationPath $env:TEMP -Force
         
         New-Item -ItemType Directory -Path '.\nssm' -Force | Out-Null
-        Copy-Item -Path "$env:TEMP\nssm-2.24\win64\nssm.exe" -Destination $nssmPath
+        Copy-Item -Path "$env:TEMP\nssm-2.24\win64\nssm.exe" -Destination $tempNssmPath
         
         Remove-Item -Path $zipPath -Force
         Remove-Item -Path "$env:TEMP\nssm-2.24" -Recurse -Force
+        
+        Write-Log "NSSM downloaded and prepared for deployment"
     }
 }
 
 function Install-Service {
     Write-Log 'Installing Windows Service'
-    $nssmPath = '.\nssm\nssm.exe'
+    $nssmPath = Join-Path $InstallPath 'nssm\nssm.exe'
     $pythonPath = (Get-Command python).Source
-    $scriptPath = Join-Path $PWD 'plex_rar_bridge.py'
+    $scriptPath = Join-Path $InstallPath 'plex_rar_bridge.py'
     
     # Remove existing service if it exists
     try {
@@ -121,9 +123,9 @@ function Install-Service {
     & $nssmPath set $ServiceName DisplayName "Plex RAR Bridge Service"
     & $nssmPath set $ServiceName Description "Automatic RAR extraction service for Plex Media Server"
     & $nssmPath set $ServiceName Start SERVICE_AUTO_START
-    & $nssmPath set $ServiceName AppDirectory $PWD
-    & $nssmPath set $ServiceName AppStdout "$PWD\logs\service.log"
-    & $nssmPath set $ServiceName AppStderr "$PWD\logs\service-error.log"
+    & $nssmPath set $ServiceName AppDirectory $InstallPath
+    & $nssmPath set $ServiceName AppStdout "$InstallPath\logs\service.log"
+    & $nssmPath set $ServiceName AppStderr "$InstallPath\logs\service-error.log"
     & $nssmPath set $ServiceName AppRotateFiles 1
     & $nssmPath set $ServiceName AppRotateOnline 1
     & $nssmPath set $ServiceName AppRotateSeconds 86400
@@ -140,9 +142,81 @@ function Install-Service {
 function Start-GUI {
     Write-Log 'Starting GUI monitor'
     try {
-        Start-Process -FilePath 'python' -ArgumentList 'gui_monitor.py' -WindowStyle Hidden
+        $guiScriptPath = Join-Path $InstallPath 'gui_monitor.py'
+        Start-Process -FilePath 'python' -ArgumentList $guiScriptPath -WindowStyle Hidden -WorkingDirectory $InstallPath
         Write-Log 'GUI monitor started successfully'
     } catch { Write-Log "GUI startup failed: $_" 'WARN' }
+}
+
+# ─── file deployment ────────────────────────────────────────────────────
+function Deploy-ApplicationFiles {
+    Write-Log "Deploying application files to $InstallPath"
+    
+    # Create installation directory
+    if (!(Test-Path $InstallPath)) {
+        New-Item -ItemType Directory -Path $InstallPath -Force | Out-Null
+        Write-Log "Created installation directory: $InstallPath"
+    }
+    
+    # List of files and directories to copy
+    $filesToCopy = @(
+        'plex_rar_bridge.py',
+        'python_rar_vfs.py', 
+        'enhanced_setup_panel.py',
+        'gui_monitor.py',
+        'upnp_port_manager.py',
+        'rar2fs_handler.py',
+        'ftp_pycurl_handler.py',
+        'monitor_service.py',
+        'config.yaml',
+        'setup_config.json',
+        'enhanced_setup_config.json',
+        'ftp_config.json',
+        'config.yaml.template',
+        'requirements.txt',
+        'UnRAR.exe',
+        'README.md',
+        'license.txt'
+    )
+    
+    $directoriesToCopy = @(
+        'docs',
+        'nssm'
+    )
+    
+    # Copy files
+    foreach ($file in $filesToCopy) {
+        if (Test-Path $file) {
+            $destPath = Join-Path $InstallPath $file
+            Copy-Item -Path $file -Destination $destPath -Force
+            Write-Log "Copied: $file"
+        } else {
+            Write-Log "Warning: File not found: $file" 'WARN'
+        }
+    }
+    
+    # Copy directories
+    foreach ($dir in $directoriesToCopy) {
+        if (Test-Path $dir) {
+            $destPath = Join-Path $InstallPath $dir
+            Copy-Item -Path $dir -Destination $destPath -Recurse -Force
+            Write-Log "Copied directory: $dir"
+        } else {
+            Write-Log "Warning: Directory not found: $dir" 'WARN'
+        }
+    }
+    
+    # Create required directories
+    $requiredDirs = @('logs', 'data', 'work', 'failed', 'archive', 'thumbnails_cache')
+    foreach ($dir in $requiredDirs) {
+        $dirPath = Join-Path $InstallPath $dir
+        if (!(Test-Path $dirPath)) {
+            New-Item -ItemType Directory -Path $dirPath -Force | Out-Null
+            Write-Log "Created directory: $dir"
+        }
+    }
+    
+    Write-Log "Application files deployed successfully"
 }
 
 # ─── main installation phases ──────────────────────────────────────────
@@ -174,16 +248,24 @@ function Install-Phase2-Tools {
     Write-Log "Phase 2 completed successfully"
 }
 
-function Install-Phase3-Service {
-    Write-Log "=== PHASE 3: Windows Service ==="
+function Install-Phase3-Deploy {
+    Write-Log "=== PHASE 3: Application Deployment ==="
     
-    Install-Service
+    Deploy-ApplicationFiles
     
     Write-Log "Phase 3 completed successfully"
 }
 
-function Install-Phase4-GUI {
-    Write-Log "=== PHASE 4: GUI Monitor ==="
+function Install-Phase4-Service {
+    Write-Log "=== PHASE 4: Windows Service ==="
+    
+    Install-Service
+    
+    Write-Log "Phase 4 completed successfully"
+}
+
+function Install-Phase5-GUI {
+    Write-Log "=== PHASE 5: GUI Monitor ==="
     
     if (!$NoGui) {
         Start-GUI
@@ -191,13 +273,83 @@ function Install-Phase4-GUI {
         Write-Log "GUI disabled via -NoGui parameter"
     }
     
-    Write-Log "Phase 4 completed successfully"
+    Write-Log "Phase 5 completed successfully"
+}
+
+# ─── uninstall management ──────────────────────────────────────────────
+function Uninstall-Service {
+    Write-Log "Uninstalling $ServiceName service"
+    
+    try {
+        # Try to use NSSM from installation directory first
+        $nssmPath = Join-Path $InstallPath 'nssm\nssm.exe'
+        if (!(Test-Path $nssmPath)) {
+            # Fallback to current directory
+            $nssmPath = '.\nssm\nssm.exe'
+        }
+        
+        if (Test-Path $nssmPath) {
+            & $nssmPath stop $ServiceName 2>$null
+            & $nssmPath remove $ServiceName confirm 2>$null
+            Write-Log "Service removed using NSSM"
+        } else {
+            # Try using SC command as fallback
+            & sc.exe stop $ServiceName 2>$null
+            & sc.exe delete $ServiceName 2>$null
+            Write-Log "Service removed using SC command"
+        }
+    } catch {
+        Write-Log "Error removing service: $_" 'WARN'
+    }
+}
+
+function Remove-InstallationFiles {
+    Write-Log "Removing installation files from $InstallPath"
+    
+    if (Test-Path $InstallPath) {
+        try {
+            # Stop any running processes first
+            Get-Process | Where-Object { $_.Path -like "$InstallPath\*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+            
+            # Remove the installation directory
+            Remove-Item -Path $InstallPath -Recurse -Force
+            Write-Log "Installation directory removed successfully"
+        } catch {
+            Write-Log "Error removing installation directory: $_" 'WARN'
+            Write-Log "You may need to manually remove: $InstallPath" 'WARN'
+        }
+    } else {
+        Write-Log "Installation directory not found: $InstallPath"
+    }
+}
+
+function Uninstall-Application {
+    Write-Log "Starting $AppName uninstallation"
+    
+    try {
+        Uninstall-Service
+        Remove-InstallationFiles
+        
+        Write-Log "=== UNINSTALLATION COMPLETE ==="
+        Write-Log "$AppName has been removed successfully"
+        return 0
+        
+    } catch {
+        Write-Log "Uninstallation failed: $_" 'ERROR'
+        return 1
+    }
 }
 
 # ─── main execution ────────────────────────────────────────────────────
 function Main {
     Write-Log "Starting $AppName v$AppVersion installation"
+    Write-Log "Installation Path: $InstallPath"
     Write-Log "Log file: $LogPath"
+    
+    # Handle uninstall
+    if ($Uninstall) {
+        return (Uninstall-Application)
+    }
     
     # Check prerequisites
     if (!(Test-Admin)) {
@@ -213,15 +365,20 @@ function Main {
     try {
         Install-Phase1-Python
         Install-Phase2-Tools
-        Install-Phase3-Service
-        Install-Phase4-GUI
+        Install-Phase3-Deploy
+        Install-Phase4-Service
+        Install-Phase5-GUI
         
         Write-Log "=== INSTALLATION COMPLETE ==="
         Write-Log "Successfully installed $AppName v$AppVersion"
+        Write-Log "Installation Path: $InstallPath"
         Write-Log "Service: $ServiceName"
         Write-Log "Processing Mode: $ProcessingMode"
         Write-Log "Enhanced UPnP support included"
         Write-Log "Log file: $LogPath"
+        Write-Log ""
+        Write-Log "The service is now running from: $InstallPath"
+        Write-Log "All configuration files are located in the installation directory"
         
         return 0
         
