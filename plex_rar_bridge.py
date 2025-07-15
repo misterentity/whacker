@@ -949,8 +949,8 @@ class PlexRarBridge:
                         vol.unlink()
                         self.logger.info(f"Deleted archive volume: {vol.name}")
             else:
-                # Move to archive directory
-                self._move_archive_to_archive_dir(first_volume)
+                # For Python VFS mode, keep archives in place for HTTP server access
+                self.logger.info(f"Archive files kept in place for Python VFS: {first_volume.name}")
             
             # Update stats
             self.stats['processed'] += len(mount_info.get('target_links', []))
