@@ -1,0 +1,160 @@
+# Plex RAR Bridge Configuration - rar2fs Integration Example
+# This configuration demonstrates both traditional extraction and rar2fs modes
+
+handbrake:
+  enabled: false
+  executable: C:/Program Files/HandBrake/HandBrakeCLI.exe
+  preset: Fast 1080p30
+  quality: 22
+
+logging:
+  backup_count: 5
+  level: INFO  # Change to DEBUG for troubleshooting rar2fs issues
+  max_log_size: 10485760
+
+options:
+  delete_archives: true
+  duplicate_check: true
+  enable_gui: false
+  enable_reencoding: false
+  
+  # PROCESSING MODE - Choose one:
+  # 'extraction'  - Traditional mode: Extract RAR → Move files → Delete temp
+  # 'rar2fs'      - External rar2fs: Mount RAR → Create links → Plex reads directly
+  # 'python_vfs'  - Python VFS: HTTP server → STRM files → Plex streams directly
+  processing_mode: python_vfs  # Recommended: python_vfs (no external dependencies)
+  
+  extensions:
+  - .rar
+  - .r00
+  - .r01
+  - .r02
+  - .r03
+  - .r04
+  - .r05
+  - .r06
+  - .r07
+  - .r08
+  - .r09
+  file_stabilization_time: 10
+  max_file_age: 3600
+  max_retry_age_hours: 4
+  max_retry_attempts: 20
+  retry_interval: 60
+  scan_existing_files: true
+
+# rar2fs configuration - Only used when processing_mode is 'rar2fs'
+rar2fs:
+  enabled: true
+  
+  # Path to rar2fs executable (adjust based on your Cygwin installation)
+  executable: C:/cygwin64/home/User/rar2fs/rar2fs.exe
+  
+  # Base directory for mount points - archives will be mounted under subdirectories here
+  mount_base: C:/PlexRarBridge/mounts
+  
+  # FUSE mount options for rar2fs
+  mount_options: 
+    - "uid=-1"        # Use current user ID (-1 = auto-detect)
+    - "gid=-1"        # Use current group ID (-1 = auto-detect)
+    - "allow_other"   # Allow other users to access the mount (required for Plex)
+  
+  # Cleanup settings
+  cleanup_on_exit: true    # Automatically unmount all archives when application exits
+  winfsp_required: true    # Require WinFSP service to be running (Windows only)
+
+paths:
+  # Directory to watch for new RAR files
+  watch: C:\PlexRarBridge\rar_watch
+  
+  # Temporary work directory - only used in extraction mode
+  work: C:\PlexRarBridge\work
+  
+  # Target directory where files appear for Plex
+  # - Extraction mode: Files are physically moved here
+  # - rar2fs mode: Symbolic links are created here pointing to mounted files
+  target: D:\Media\Movies
+  
+  # Directory for failed/encrypted archives
+  failed: C:\PlexRarBridge\failed
+  
+  # Directory to store processed archives (if delete_archives is false)
+  archive: C:\PlexRarBridge\archive
+
+plex:
+  host: http://127.0.0.1:32400
+  library_key: 1
+  token: YOUR_PLEX_TOKEN_HERE
+
+# =============================================================================
+# CONFIGURATION NOTES
+# =============================================================================
+
+# TRADITIONAL EXTRACTION MODE (processing_mode: extraction)
+# --------------------------------------------------------
+# 1. RAR files are extracted to the 'work' directory
+# 2. Media files are moved to the 'target' directory
+# 3. Temporary files are cleaned up
+# 4. Archive files are moved to 'archive' or deleted
+# 
+# Pros:
+# - Simple, well-tested approach
+# - No additional dependencies
+# - Works with any file system
+# 
+# Cons:
+# - Requires disk space for extraction
+# - Slower processing (extraction + file moving)
+# - Risk of corruption during extraction
+
+# RAR2FS VIRTUAL FILESYSTEM MODE (processing_mode: rar2fs)
+# --------------------------------------------------------
+# 1. RAR files are mounted as virtual file systems under 'mount_base'
+# 2. Symbolic links are created in 'target' directory
+# 3. Plex reads files directly from the mounted RAR
+# 4. Archive files are moved to 'archive' or deleted
+# 
+# Pros:
+# - Saves disk space (no extraction needed)
+# - Faster processing (instant mounting)
+# - Files remain compressed
+# - Original archive integrity preserved
+# 
+# Cons:
+# - Requires rar2fs and WinFSP installation
+# - More complex troubleshooting
+# - Depends on mount stability
+
+# MIGRATION STRATEGY
+# -----------------
+# To migrate from extraction to rar2fs mode:
+# 1. Install rar2fs and WinFSP
+# 2. Change processing_mode to 'rar2fs'
+# 3. Configure rar2fs section
+# 4. Test with a few archives
+# 5. Monitor logs for any issues
+# 
+# To rollback to extraction mode:
+# 1. Change processing_mode to 'extraction'
+# 2. Restart the service
+# 3. Existing mounts will be automatically cleaned up
+
+# TROUBLESHOOTING
+# ---------------
+# Common rar2fs issues:
+# 1. WinFSP service not running: net start WinFsp.Launcher
+# 2. Permission errors: Check mount_options uid/gid settings
+# 3. Mount verification failed: Verify rar2fs executable path
+# 4. Plex not detecting files: Check allow_other option and library paths
+# 
+# Enable debug logging for detailed troubleshooting:
+# logging:
+#   level: DEBUG
+
+# PERFORMANCE TUNING
+# ------------------
+# For optimal rar2fs performance:
+# 1. Use SSD for mount_base directory
+# 2. Ensure good network performance for remote archives
+# 3. Monitor system resources with multiple concurrent mounts
+# 4. Consider separate mount_base for different library types 

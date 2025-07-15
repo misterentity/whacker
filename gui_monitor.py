@@ -809,7 +809,10 @@ class PlexRarBridgeGUI:
         # Tab 6: Setup Panel
         self.create_setup_tab()
         
-        # Tab 7: Configuration
+        # Tab 7: Enhanced Setup Panel
+        self.create_enhanced_setup_tab()
+        
+        # Tab 8: Configuration
         self.create_config_tab()
     
     def create_threads_tab(self):
@@ -4037,6 +4040,32 @@ class PlexRarBridgeGUI:
             
             self.plex_status_label.config(text="Not Connected", style='Error.TLabel')
             self.setup_status_label.config(text="Setup reset to defaults")
+    
+    def create_enhanced_setup_tab(self):
+        """Create enhanced setup tab with processing mode selection"""
+        try:
+            # Import the enhanced setup panel
+            from enhanced_setup_panel import EnhancedSetupPanel
+            
+            # Create the enhanced setup panel
+            self.enhanced_setup_panel = EnhancedSetupPanel(self.notebook, self.script_dir)
+            
+        except ImportError:
+            # Fallback if enhanced setup panel is not available
+            fallback_frame = ttk.Frame(self.notebook)
+            self.notebook.add(fallback_frame, text="Enhanced Setup")
+            
+            ttk.Label(fallback_frame, 
+                     text="Enhanced Setup Panel is not available.\nPlease ensure enhanced_setup_panel.py is in the same directory.",
+                     font=('TkDefaultFont', 12)).pack(expand=True)
+        except Exception as e:
+            # Error handling
+            error_frame = ttk.Frame(self.notebook)
+            self.notebook.add(error_frame, text="Enhanced Setup")
+            
+            ttk.Label(error_frame, 
+                     text=f"Error loading Enhanced Setup Panel:\n{e}",
+                     font=('TkDefaultFont', 12)).pack(expand=True)
     
     def create_config_tab(self):
         """Create configuration tab"""

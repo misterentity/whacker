@@ -71,7 +71,13 @@ The PowerShell installer automatically detects:
 
 ### ✅ Plex Configuration
 - **Server URL**: Tests common ports (32400, 32401, 32402)
-- **Authentication Token**: Scans Plex preferences files
+- **Authentication Token**: Enhanced detection from 6 sources:
+  - Windows Registry (Plex installation settings)
+  - Preferences Files (Plex Media Server configuration)
+  - Browser Cookies (Chrome/Edge saved tokens)
+  - Plex Databases (Library database files)
+  - Process Memory (Running Plex processes)
+  - Web Interface (Direct web interface scraping)
 - **Libraries**: Fetches available libraries via API
 - **Installation Status**: Verifies Plex is running
 

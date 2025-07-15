@@ -69,14 +69,29 @@ The setup script will now automatically:
   - Running processes
   - Configuration files
   - Network scanning
-- 🔍 **Detect your Plex token** from multiple sources:
-  - Windows Registry
-  - Plex Media Server preferences
-  - Browser cookies (Chrome/Edge/Firefox)
-  - Plex databases
-  - App data files
+- 🔍 **Detect your Plex token** from 6 enhanced sources:
+  - **Windows Registry** - Plex installation settings
+  - **Preferences Files** - Plex Media Server configuration
+  - **Browser Cookies** - Chrome/Edge saved tokens
+  - **Plex Databases** - Library database files
+  - **Process Memory** - Running Plex processes
+  - **Web Interface** - Direct web interface scraping
 - 📚 **List all your Plex libraries** with their types (Movies, TV Shows, etc.)
 - 🎯 **Let you select** the library you want to use
+
+### 🔧 Token Validation Tool
+
+If token detection fails, you can use the included validation tool:
+
+```powershell
+.\test_plex_token.ps1
+```
+
+This tool will:
+- Guide you through manual token retrieval
+- Test your token for validity
+- Provide detailed connection information
+- Verify library access
 
 **Manual token method** (if auto-detection fails):
 1. Open your Plex web interface

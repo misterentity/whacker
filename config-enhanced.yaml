@@ -1,0 +1,199 @@
+# Enhanced Plex RAR Bridge Configuration with Per-Directory Processing Modes
+# This configuration allows different directories to use different processing methods
+
+# Plex Server Configuration
+plex:
+  host: "http://localhost:32400"
+  token: "your_plex_token_here"
+  libraries:
+    - name: "Movies"
+      type: "movie"
+      path: "/path/to/plex/movies"
+    - name: "TV Shows"
+      type: "show"
+      path: "/path/to/plex/tv"
+
+# Directory Pairs with Processing Mode Selection
+# Each directory pair can have its own processing mode
+directory_pairs:
+  # High-performance setup for frequently accessed content
+  - source: "C:/Downloads/Movies"
+    target: "C:/Plex/Movies"
+    processing_mode: "python_vfs"  # Use Python VFS for instant access
+    plex_library: "Movies"
+    enabled: true
+    recursive: true
+    
+  # Space-efficient setup for archival content
+  - source: "C:/Downloads/TV"
+    target: "C:/Plex/TV"
+    processing_mode: "python_vfs"  # Use Python VFS for TV shows
+    plex_library: "TV Shows"
+    enabled: true
+    recursive: true
+    
+  # Traditional extraction for special cases
+  - source: "C:/Downloads/Archive"
+    target: "C:/Plex/Archive"
+    processing_mode: "extraction"  # Use extraction for archive content
+    plex_library: "Movies"
+    enabled: true
+    recursive: true
+    
+  # External rar2fs for advanced users
+  - source: "C:/Downloads/Special"
+    target: "C:/Plex/Special"
+    processing_mode: "rar2fs"  # Use external rar2fs
+    plex_library: "Movies"
+    enabled: false  # Disabled until rar2fs is configured
+    recursive: true
+
+# Global Processing Mode Settings
+# Default mode for new directories and fallback
+options:
+  global_processing_mode: "python_vfs"  # Default mode for new pairs
+  monitor_interval: 5
+  max_threads: 4
+  recursive: true
+  auto_start: true
+  
+# Processing Mode Configurations
+processing_modes:
+  # Python VFS Configuration (Recommended)
+  python_vfs:
+    enabled: true
+    port_range: [8765, 8865]  # Port range for HTTP servers
+    mount_base: "C:/PlexRarBridge/mounts"
+    stream_chunk_size: 8192
+    max_concurrent_streams: 10
+    cache_headers: true
+    
+  # External rar2fs Configuration
+  rar2fs:
+    enabled: false  # Set to true after installation
+    executable: "C:/cygwin64/home/User/rar2fs/rar2fs.exe"
+    mount_base: "C:/PlexRarBridge/rar2fs_mounts"
+    mount_options:
+      - "uid=-1"
+      - "gid=-1"
+      - "allow_other"
+      - "default_permissions"
+    unmount_timeout: 30
+    auto_install: false  # Auto-install dependencies
+    
+  # Traditional Extraction Configuration
+  extraction:
+    enabled: true
+    work_dir: "C:/PlexRarBridge/work"
+    delete_archives: true
+    duplicate_check: true
+    verify_extraction: true
+    cleanup_temp: true
+
+# Logging Configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/plex_rar_bridge.log"
+  max_size: 10485760  # 10MB
+  backup_count: 5
+  per_directory_logging: true  # Log per directory pair
+
+# Database Configuration
+database:
+  type: "sqlite"
+  path: "data/plex_rar_bridge.db"
+  backup_interval: 3600  # 1 hour
+  
+# FTP Configuration (if needed)
+ftp:
+  enabled: false
+  host: "ftp.example.com"
+  port: 21
+  username: "user"
+  password: "pass"
+  
+# UPnP Configuration for automatic port forwarding
+upnp:
+  enabled: true
+  timeout: 10
+  retry_count: 3
+  lease_duration: 3600  # 1 hour in seconds
+  discovery_timeout: 5
+  renewal_interval: 1800  # 30 minutes
+  
+# Advanced Features
+advanced:
+  # Performance tuning per processing mode
+  performance:
+    python_vfs:
+      max_memory_cache: 100  # MB
+      preload_headers: true
+      connection_pool_size: 5
+    rar2fs:
+      mount_timeout: 60
+      retry_mount: 3
+    extraction:
+      parallel_extraction: true
+      temp_cleanup_interval: 300
+      
+  # Quality and encoding settings
+  quality:
+    video_extensions: [".mkv", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm"]
+    audio_extensions: [".mp3", ".flac", ".aac", ".ogg", ".wav", ".wma"]
+    image_extensions: [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".tiff"]
+    
+  # Processing rules
+  rules:
+    min_file_size: 1048576  # 1MB
+    max_file_size: 107374182400  # 100GB
+    skip_patterns:
+      - "*.txt"
+      - "*.nfo"
+      - "*.sample.*"
+    
+  # Health monitoring
+  health:
+    enabled: true
+    check_interval: 60
+    alert_on_failure: true
+    max_failures: 3
+    
+# GUI Configuration
+gui:
+  theme: "default"
+  auto_refresh: true
+  refresh_interval: 2
+  show_detailed_status: true
+  enable_notifications: true
+  
+# Security Settings
+security:
+  restrict_access: false
+  allowed_ips: ["127.0.0.1", "::1"]
+  api_key: "your_api_key_here"
+  
+# Backup and Recovery
+backup:
+  enabled: true
+  interval: 86400  # 24 hours
+  retention: 7  # days
+  location: "backup/"
+  
+# Migration Settings (for upgrading from older versions)
+migration:
+  auto_migrate: true
+  backup_before_migration: true
+  
+# Feature Flags
+features:
+  enhanced_gui: true
+  per_directory_modes: true
+  automatic_mode_selection: false
+  intelligent_fallback: true
+  
+# Compatibility Settings
+compatibility:
+  plex_version: "auto"
+  os_optimization: true
+  legacy_support: false 

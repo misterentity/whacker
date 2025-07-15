@@ -44,6 +44,20 @@ try:
 except ImportError:
     GUI_AVAILABLE = False
 
+# Optional rar2fs imports
+try:
+    from rar2fs_handler import Rar2fsHandler
+    RAR2FS_AVAILABLE = True
+except ImportError:
+    RAR2FS_AVAILABLE = False
+
+# Python RAR VFS imports (always available)
+try:
+    from python_rar_vfs import PythonRarVfsHandler
+    PYTHON_RAR_VFS_AVAILABLE = True
+except ImportError:
+    PYTHON_RAR_VFS_AVAILABLE = False
+
 class ProcessingQueue:
     """Thread-safe queue for processing RAR archives one at a time"""
     
@@ -259,6 +273,15 @@ class PlexRarBridge:
         retry_delay = self.config.get('options', {}).get('retry_interval', 60)
         self.processing_queue = ProcessingQueue(self, max_retries=max_retries, retry_delay=retry_delay)
         
+        # Initialize virtual filesystem handler based on processing mode
+        self.rar2fs_handler = None
+        processing_mode = self.config.get('options', {}).get('processing_mode', 'extraction')
+        
+        if processing_mode == 'rar2fs':
+            self._setup_rar2fs_handler()
+        elif processing_mode == 'python_vfs':
+            self._setup_python_vfs_handler()
+        
         # Setup directory pairs
         self._setup_directory_pairs()
         
@@ -286,19 +309,21 @@ class PlexRarBridge:
         return None
     
     def _setup_directory_pairs(self):
-        """Setup directory pairs from setup configuration"""
+        """Setup directory pairs from setup configuration with per-directory processing modes"""
         if not self.setup_config or not self.setup_config.get('directory_pairs'):
             # Fallback to main config
             watch_path = self.config.get('paths', {}).get('watch')
             target_path = self.config.get('paths', {}).get('target')
             if watch_path and target_path:
                 library_key = self.config.get('plex', {}).get('library_key', 1)
+                processing_mode = self.config.get('options', {}).get('processing_mode', 'python_vfs')
                 self.directory_pairs[watch_path] = {
                     'target': target_path,
                     'library_key': library_key,
+                    'processing_mode': processing_mode,
                     'enabled': True
                 }
-                self.logger.info(f"Using main config: {watch_path} -> {target_path}")
+                self.logger.info(f"Using main config: {watch_path} -> {target_path} (Mode: {processing_mode})")
         else:
             # Use setup config directory pairs
             for pair in self.setup_config['directory_pairs']:
@@ -306,18 +331,20 @@ class PlexRarBridge:
                     source = pair['source']
                     target = pair['target']
                     library_key = pair.get('library_key', '1')
+                    processing_mode = pair.get('processing_mode', self.config.get('options', {}).get('global_processing_mode', 'python_vfs'))
                     
                     self.directory_pairs[source] = {
                         'target': target,
                         'library_key': int(library_key) if library_key.isdigit() else 1,
+                        'processing_mode': processing_mode,
                         'enabled': True
                     }
-                    self.logger.info(f"Directory pair: {source} -> {target} (Library: {library_key})")
+                    self.logger.info(f"Directory pair: {source} -> {target} (Library: {library_key}, Mode: {processing_mode})")
         
                     self.logger.info(f"Configured {len(self.directory_pairs)} directory pairs for monitoring")
     
     def _get_target_info_for_file(self, file_path):
-        """Get target directory and library key for a file based on its source directory"""
+        """Get target directory, library key, and processing mode for a file based on its source directory"""
         file_path = Path(file_path)
         
         # Find the matching source directory
@@ -328,7 +355,8 @@ class PlexRarBridge:
                 file_path.relative_to(source_path)
                 return {
                     'target': info['target'],
-                    'library_key': info['library_key']
+                    'library_key': info['library_key'],
+                    'processing_mode': info.get('processing_mode', 'python_vfs')
                 }
             except ValueError:
                 continue
@@ -435,6 +463,32 @@ class PlexRarBridge:
             conn.commit()
             conn.close()
             return False
+    
+    def _setup_rar2fs_handler(self):
+        """Setup rar2fs handler for virtual file system operations"""
+        if not RAR2FS_AVAILABLE:
+            self.logger.error("rar2fs_handler module not available")
+            raise Exception("rar2fs_handler module not available")
+        
+        try:
+            self.rar2fs_handler = Rar2fsHandler(self.config, self.logger)
+            self.logger.info("rar2fs handler initialized successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize rar2fs handler: {e}")
+            raise e
+    
+    def _setup_python_vfs_handler(self):
+        """Setup Python VFS handler for virtual file system operations"""
+        if not PYTHON_RAR_VFS_AVAILABLE:
+            self.logger.error("python_rar_vfs module not available")
+            raise Exception("python_rar_vfs module not available")
+        
+        try:
+            self.rar2fs_handler = PythonRarVfsHandler(self.config, self.logger)
+            self.logger.info("Python RAR VFS handler initialized successfully")
+        except Exception as e:
+            self.logger.error(f"Failed to initialize Python RAR VFS handler: {e}")
+            raise e
     
     def plex_refresh(self, library_key=None):
         """Trigger Plex library refresh with enhanced detection"""
@@ -798,7 +852,122 @@ class PlexRarBridge:
             return str(input_file)
     
     def extract_archive(self, first_volume):
-        """Extract RAR archive set"""
+        """Process RAR archive using configured processing mode (per-directory)"""
+        # Get target info including processing mode for this specific directory
+        target_info = self._get_target_info_for_file(first_volume)
+        processing_mode = target_info.get('processing_mode', 'extraction')
+        
+        self.logger.info(f"Processing {first_volume.name} using mode: {processing_mode}")
+        
+        if processing_mode == 'rar2fs':
+            return self._process_archive_rar2fs(first_volume)
+        elif processing_mode == 'python_vfs':
+            return self._process_archive_python_vfs(first_volume)
+        else:
+            return self._process_archive_extraction(first_volume)
+    
+    def _process_archive_rar2fs(self, first_volume):
+        """Process RAR archive using rar2fs virtual file system"""
+        if not self.rar2fs_handler:
+            raise Exception("rar2fs handler not initialized")
+        
+        try:
+            # Determine target directory and library key based on source
+            target_info = self._get_target_info_for_file(first_volume)
+            
+            self.logger.info(f"Starting rar2fs mount: {first_volume.name}")
+            
+            # Test archive integrity first
+            test_result = self.test_archive_integrity(first_volume)
+            
+            if test_result == "encrypted":
+                # Move to failed directory
+                self._move_archive_to_failed(first_volume)
+                return
+            elif test_result != "ok":
+                self.logger.error(f"Archive test failed: {first_volume.name}")
+                return
+            
+            # Mount the archive using rar2fs
+            mount_info = self.rar2fs_handler.mount_archive(first_volume, target_info)
+            
+            # Handle archive files based on config
+            if self.config['options']['delete_archives']:
+                volumes = self.get_archive_volumes(first_volume)
+                for vol in volumes:
+                    if vol.exists():
+                        vol.unlink()
+                        self.logger.info(f"Deleted archive volume: {vol.name}")
+            else:
+                # Move to archive directory
+                self._move_archive_to_archive_dir(first_volume)
+            
+            # Update stats
+            self.stats['processed'] += len(mount_info.get('target_links', []))
+            
+            # Trigger Plex refresh
+            self.plex_refresh(target_info['library_key'])
+            
+            self.logger.info(f"Successfully processed with rar2fs: {first_volume.name}")
+            
+        except Exception as e:
+            self.logger.error(f"rar2fs processing failed for {first_volume.name}: {e}")
+            # Move to failed directory on error
+            self._move_archive_to_failed(first_volume)
+            raise e
+    
+    def _process_archive_python_vfs(self, first_volume):
+        """Process RAR archive using Python virtual file system"""
+        if not self.rar2fs_handler:
+            raise Exception("Python VFS handler not initialized")
+        
+        try:
+            # Determine target directory and library key based on source
+            target_info = self._get_target_info_for_file(first_volume)
+            
+            self.logger.info(f"Starting Python VFS mount: {first_volume.name}")
+            
+            # Test archive integrity first
+            test_result = self.test_archive_integrity(first_volume)
+            
+            if test_result == "encrypted":
+                # Move to failed directory
+                self._move_archive_to_failed(first_volume)
+                return
+            elif test_result != "ok":
+                self.logger.error(f"Archive test failed: {first_volume.name}")
+                return
+            
+            # Mount the archive using Python VFS
+            mount_info = self.rar2fs_handler.mount_archive(first_volume, target_info)
+            
+            # Handle archive files based on config
+            if self.config['options']['delete_archives']:
+                volumes = self.get_archive_volumes(first_volume)
+                for vol in volumes:
+                    if vol.exists():
+                        vol.unlink()
+                        self.logger.info(f"Deleted archive volume: {vol.name}")
+            else:
+                # Move to archive directory
+                self._move_archive_to_archive_dir(first_volume)
+            
+            # Update stats
+            self.stats['processed'] += len(mount_info.get('target_links', []))
+            
+            # Trigger Plex refresh
+            self.plex_refresh(target_info['library_key'])
+            
+            self.logger.info(f"Successfully processed with Python VFS: {first_volume.name}")
+            
+        except Exception as e:
+            self.logger.error(f"Python VFS processing failed for {first_volume.name}: {e}")
+            # Move to failed directory on error
+            self._move_archive_to_failed(first_volume)
+            raise e
+    
+    def _process_archive_extraction(self, first_volume):
+        """Extract RAR archive set (traditional method)"""
         try:
             stem = first_volume.stem.split('.part')[0] if '.part' in first_volume.name else first_volume.stem
             dest_dir = Path(self.config['paths']['work']) / stem
@@ -949,6 +1118,42 @@ class PlexRarBridge:
         except Exception as e:
             self.logger.exception(f"Extraction error for {first_volume.name}: {e}")
             self.stats['errors'] += 1
+    
+    def _move_archive_to_failed(self, first_volume):
+        """Move archive to failed directory"""
+        try:
+            failed_dir = Path(self.config['paths']['failed'])
+            failed_dir.mkdir(parents=True, exist_ok=True)
+            
+            volumes = self.get_archive_volumes(first_volume)
+            for vol in volumes:
+                if vol.exists():
+                    failed_path = failed_dir / vol.name
+                    if not failed_path.exists():
+                        shutil.move(vol, failed_path)
+                        self.logger.info(f"Moved failed archive to: {failed_path}")
+                    else:
+                        self.logger.warning(f"Failed archive already exists: {failed_path}")
+        except Exception as e:
+            self.logger.exception(f"Error moving archive to failed directory: {e}")
+    
+    def _move_archive_to_archive_dir(self, first_volume):
+        """Move archive to archive directory"""
+        try:
+            archive_dir = Path(self.config['paths']['archive'])
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            
+            volumes = self.get_archive_volumes(first_volume)
+            for vol in volumes:
+                if vol.exists():
+                    archive_path = archive_dir / vol.name
+                    if not archive_path.exists():
+                        shutil.move(vol, archive_path)
+                        self.logger.info(f"Moved archive to: {archive_path}")
+                    else:
+                        self.logger.warning(f"Archive already exists: {archive_path}")
+        except Exception as e:
+            self.logger.exception(f"Error moving archive to archive directory: {e}")
     
     def create_tray_icon(self):
         """Create system tray icon"""
@@ -1248,6 +1453,11 @@ class PlexRarBridgeApp:
                 observer.join()
         
         self.bridge.logger.info("Stopped all file system observers")
+        
+        # Cleanup rar2fs mounts if enabled
+        if self.bridge.rar2fs_handler:
+            self.bridge.logger.info("Cleaning up rar2fs mounts...")
+            self.bridge.rar2fs_handler.cleanup_all_mounts()
         
         # Stop tray icon if it exists
         if hasattr(self.bridge, 'tray_icon') and self.bridge.tray_icon:
