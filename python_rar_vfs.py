@@ -52,19 +52,48 @@ class RarVirtualFile:
         return f"{rar_name}_{timestamp}_{self.name}"
     
     def read(self, start=0, length=None):
-        """Read file content from RAR archive"""
+        """Read file content from RAR archive with multi-volume support"""
         try:
+            # For multi-volume archives, use smaller chunk sizes to avoid timeouts
+            chunk_size = 1024 * 1024  # 1MB chunks for better streaming
+            
             with rarfile.RarFile(self.rar_path) as rf:
                 with rf.open(self.file_info) as f:
                     if start > 0:
                         f.seek(start)
                     
                     if length is not None:
-                        return f.read(length)
+                        # Read in chunks for better multi-volume performance
+                        if length > chunk_size:
+                            data = bytearray()
+                            remaining = length
+                            
+                            while remaining > 0:
+                                read_size = min(chunk_size, remaining)
+                                chunk = f.read(read_size)
+                                if not chunk:
+                                    break
+                                data.extend(chunk)
+                                remaining -= len(chunk)
+                            
+                            return bytes(data)
+                        else:
+                            return f.read(length)
                     else:
-                        return f.read()
+                        # For full file reads, read in chunks to avoid memory issues
+                        data = bytearray()
+                        while True:
+                            chunk = f.read(chunk_size)
+                            if not chunk:
+                                break
+                            data.extend(chunk)
+                        return bytes(data)
+                        
         except Exception as e:
-            self.vfs_handler.logger.error(f"Error reading from RAR: {e}")
+            self.vfs_handler.logger.error(f"Error reading from multi-volume RAR {self.rar_path.name}: {e}")
+            # For very large multi-volume files, suggest extraction mode
+            if self.size > 5 * 1024 * 1024 * 1024:  # > 5GB
+                self.vfs_handler.logger.warning(f"Large multi-volume archive {self.rar_path.name} ({self.size / (1024**3):.1f}GB) may work better with extraction mode")
             raise e
     
     def extract_to_temp(self):
@@ -122,17 +151,10 @@ class RarVirtualFileSystem:
     
     def _get_server_ip(self):
         """Get the server IP address for HTTP URLs"""
-        import socket
-        try:
-            # Try to get the actual network IP address
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                # Connect to a remote address (doesn't actually send data)
-                s.connect(("8.8.8.8", 80))
-                ip = s.getsockname()[0]
-                return ip
-        except Exception:
-            # Fallback to localhost if network detection fails
-            return "127.0.0.1"
+        # For local Plex installations, use localhost for better compatibility
+        # This avoids potential network access issues when Plex and the HTTP server
+        # are on the same machine
+        return "127.0.0.1"
     
     def _create_self_signed_cert(self):
         """Create a self-signed SSL certificate for HTTPS"""

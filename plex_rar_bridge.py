@@ -857,6 +857,21 @@ class PlexRarBridge:
         target_info = self._get_target_info_for_file(first_volume)
         processing_mode = target_info.get('processing_mode', 'extraction')
         
+        # Smart processing mode selection for large multi-volume archives
+        if processing_mode == 'python_vfs':
+            archive_size, volume_count = self._analyze_archive_complexity(first_volume)
+            
+            # Auto-fallback to extraction for very large multi-volume archives
+            # Python VFS struggles with files >8GB across >15 volumes due to rarfile library limitations
+            if archive_size > 8 * 1024**3 and volume_count > 15:  # >8GB and >15 volumes
+                self.logger.warning(f"Large multi-volume archive detected: {archive_size / (1024**3):.1f}GB across {volume_count} volumes")
+                self.logger.warning(f"Auto-switching to extraction mode for better reliability: {first_volume.name}")
+                processing_mode = 'extraction'
+            elif archive_size > 15 * 1024**3:  # >15GB regardless of volume count
+                self.logger.warning(f"Very large archive detected: {archive_size / (1024**3):.1f}GB")
+                self.logger.warning(f"Auto-switching to extraction mode for better reliability: {first_volume.name}")
+                processing_mode = 'extraction'
+        
         self.logger.info(f"Processing {first_volume.name} using mode: {processing_mode}")
         
         if processing_mode == 'rar2fs':
@@ -865,6 +880,36 @@ class PlexRarBridge:
             return self._process_archive_python_vfs(first_volume)
         else:
             return self._process_archive_extraction(first_volume)
+    
+    def _analyze_archive_complexity(self, first_volume):
+        """Analyze RAR archive to determine size and volume count"""
+        try:
+            import rarfile
+            
+            # Get all volumes in the archive set
+            volumes = self.get_archive_volumes(first_volume)
+            volume_count = len(volumes)
+            
+            # Calculate total archive size
+            total_size = 0
+            for volume in volumes:
+                if volume.exists():
+                    total_size += volume.stat().st_size
+            
+            # Try to get actual content size from RAR file
+            try:
+                with rarfile.RarFile(first_volume) as rf:
+                    content_size = sum(info.file_size for info in rf.infolist() if not info.is_dir())
+                    # Use the larger of archive size or content size
+                    total_size = max(total_size, content_size)
+            except Exception as e:
+                self.logger.debug(f"Could not read RAR content size: {e}")
+            
+            return total_size, volume_count
+            
+        except Exception as e:
+            self.logger.error(f"Error analyzing archive complexity: {e}")
+            return 0, 1
     
     def _process_archive_rar2fs(self, first_volume):
         """Process RAR archive using rar2fs virtual file system"""
