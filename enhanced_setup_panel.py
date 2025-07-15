@@ -59,6 +59,12 @@ class EnhancedSetupPanel:
         
         # Load existing setup
         self.load_setup_config()
+        
+        # Test all configurations
+        self.test_all_configurations()
+        
+        # Auto-refresh rar2fs status on startup (silent)
+        self.parent.after(1000, self.silent_refresh_rar2fs_status)  # Refresh after 1 second
     
     def create_enhanced_setup_panel(self):
         """Create enhanced setup panel with processing mode selection"""
@@ -352,20 +358,49 @@ You can assign different processing modes to different directories based on your
         rar2fs_frame = ttk.Frame(self.config_notebook)
         self.config_notebook.add(rar2fs_frame, text="rar2fs")
         
+        # Create main scrollable container
+        canvas = tk.Canvas(rar2fs_frame)
+        scrollbar = ttk.Scrollbar(rar2fs_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
         # rar2fs settings
-        ttk.Label(rar2fs_frame, text="rar2fs Configuration:", font=('TkDefaultFont', 10, 'bold')).pack(anchor=tk.W, pady=(0, 10))
+        ttk.Label(scrollable_frame, text="rar2fs Configuration & Management:", font=('TkDefaultFont', 12, 'bold')).pack(anchor=tk.W, pady=(0, 15))
+        
+        # === Configuration Section ===
+        config_section = ttk.LabelFrame(scrollable_frame, text="Configuration", padding=10)
+        config_section.pack(fill=tk.X, pady=5, padx=5)
         
         # Executable path
-        exe_frame = ttk.Frame(rar2fs_frame)
+        exe_frame = ttk.Frame(config_section)
         exe_frame.pack(fill=tk.X, pady=5)
         
         ttk.Label(exe_frame, text="rar2fs Executable:").pack(side=tk.LEFT)
-        self.rar2fs_exe_var = tk.StringVar(value='C:/cygwin64/home/User/rar2fs/rar2fs.exe')
+        self.rar2fs_exe_var = tk.StringVar(value='C:/Program Files/PlexRarBridge/rar2fs/bin/rar2fs.exe')
         ttk.Entry(exe_frame, textvariable=self.rar2fs_exe_var, width=50).pack(side=tk.LEFT, padx=(10, 5))
         ttk.Button(exe_frame, text="Browse", command=self.browse_rar2fs_exe).pack(side=tk.LEFT)
         
+        # Mount base directory
+        mount_frame = ttk.Frame(config_section)
+        mount_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(mount_frame, text="Mount Base Directory:").pack(side=tk.LEFT)
+        self.rar2fs_mount_base_var = tk.StringVar(value='C:/PlexRarBridge/rar2fs_mounts')
+        ttk.Entry(mount_frame, textvariable=self.rar2fs_mount_base_var, width=50).pack(side=tk.LEFT, padx=(10, 5))
+        ttk.Button(mount_frame, text="Browse", command=self.browse_rar2fs_mount_base).pack(side=tk.LEFT)
+        
         # Mount options
-        options_frame = ttk.Frame(rar2fs_frame)
+        options_frame = ttk.Frame(config_section)
         options_frame.pack(fill=tk.X, pady=5)
         
         ttk.Label(options_frame, text="Mount Options:").pack(anchor=tk.W)
@@ -373,16 +408,95 @@ You can assign different processing modes to different directories based on your
         self.rar2fs_options_text.pack(pady=(5, 0))
         self.rar2fs_options_text.insert(tk.END, "uid=-1\ngid=-1\nallow_other")
         
-        # Installation helper
-        install_frame = ttk.Frame(rar2fs_frame)
-        install_frame.pack(fill=tk.X, pady=(10, 0))
+        # === Service Management Section ===
+        service_section = ttk.LabelFrame(scrollable_frame, text="Service Management", padding=10)
+        service_section.pack(fill=tk.X, pady=5, padx=5)
         
-        ttk.Button(install_frame, text="Auto-Install rar2fs", command=self.auto_install_rar2fs).pack(side=tk.LEFT, padx=5)
-        ttk.Button(install_frame, text="Test rar2fs", command=self.test_rar2fs).pack(side=tk.LEFT, padx=5)
+        # Service controls
+        service_controls_frame = ttk.Frame(service_section)
+        service_controls_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Button(service_controls_frame, text="🔄 Start rar2fs Service", command=self.start_rar2fs_service).pack(side=tk.LEFT, padx=5)
+        ttk.Button(service_controls_frame, text="⏹️ Stop rar2fs Service", command=self.stop_rar2fs_service).pack(side=tk.LEFT, padx=5)
+        ttk.Button(service_controls_frame, text="🔁 Restart rar2fs Service", command=self.restart_rar2fs_service).pack(side=tk.LEFT, padx=5)
+        
+        # Service status
+        self.rar2fs_service_status_label = tk.Label(service_section, text="🔍 Checking service status...", foreground='blue')
+        self.rar2fs_service_status_label.pack(anchor=tk.W, pady=(10, 5))
+        
+        # === Mount Management Section ===
+        mount_section = ttk.LabelFrame(scrollable_frame, text="Mount Management", padding=10)
+        mount_section.pack(fill=tk.X, pady=5, padx=5)
+        
+        # Mount controls
+        mount_controls_frame = ttk.Frame(mount_section)
+        mount_controls_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Button(mount_controls_frame, text="📋 View Active Mounts", command=self.view_rar2fs_mounts).pack(side=tk.LEFT, padx=5)
+        ttk.Button(mount_controls_frame, text="📂 Open Mount Directory", command=self.open_mount_directory).pack(side=tk.LEFT, padx=5)
+        ttk.Button(mount_controls_frame, text="🗑️ Unmount All", command=self.unmount_all_rar2fs).pack(side=tk.LEFT, padx=5)
+        
+        # Active mounts display
+        mounts_frame = ttk.Frame(mount_section)
+        mounts_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(mounts_frame, text="Active Mounts:").pack(anchor=tk.W)
+        self.rar2fs_mounts_text = tk.Text(mounts_frame, height=4, width=80, state=tk.DISABLED)
+        self.rar2fs_mounts_text.pack(pady=(5, 0), fill=tk.X)
+        
+        # === Installation & Testing Section ===
+        install_section = ttk.LabelFrame(scrollable_frame, text="Installation & Testing", padding=10)
+        install_section.pack(fill=tk.X, pady=5, padx=5)
+        
+        # Installation and testing controls
+        install_controls_frame = ttk.Frame(install_section)
+        install_controls_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Button(install_controls_frame, text="🚀 Auto-Install rar2fs", command=self.auto_install_rar2fs).pack(side=tk.LEFT, padx=5)
+        ttk.Button(install_controls_frame, text="🧪 Test rar2fs", command=self.test_rar2fs).pack(side=tk.LEFT, padx=5)
+        ttk.Button(install_controls_frame, text="🔧 Check Dependencies", command=self.check_rar2fs_dependencies).pack(side=tk.LEFT, padx=5)
         
         # Status
-        self.rar2fs_status_label = tk.Label(rar2fs_frame, text="❌ rar2fs: Not installed", foreground='red')
+        self.rar2fs_status_label = tk.Label(install_section, text="❌ rar2fs: Not installed", foreground='red')
         self.rar2fs_status_label.pack(anchor=tk.W, pady=(10, 0))
+        
+        # === Advanced Options Section ===
+        advanced_section = ttk.LabelFrame(scrollable_frame, text="Advanced Options", padding=10)
+        advanced_section.pack(fill=tk.X, pady=5, padx=5)
+        
+        # Advanced settings
+        advanced_frame = ttk.Frame(advanced_section)
+        advanced_frame.pack(fill=tk.X, pady=5)
+        
+        # Timeout settings
+        timeout_frame = ttk.Frame(advanced_frame)
+        timeout_frame.pack(fill=tk.X, pady=2)
+        
+        ttk.Label(timeout_frame, text="Mount Timeout (seconds):").pack(side=tk.LEFT)
+        self.rar2fs_timeout_var = tk.StringVar(value='60')
+        ttk.Entry(timeout_frame, textvariable=self.rar2fs_timeout_var, width=10).pack(side=tk.LEFT, padx=(10, 20))
+        
+        ttk.Label(timeout_frame, text="Unmount Timeout (seconds):").pack(side=tk.LEFT)
+        self.rar2fs_unmount_timeout_var = tk.StringVar(value='30')
+        ttk.Entry(timeout_frame, textvariable=self.rar2fs_unmount_timeout_var, width=10).pack(side=tk.LEFT, padx=(10, 0))
+        
+        # Auto-cleanup options
+        cleanup_frame = ttk.Frame(advanced_frame)
+        cleanup_frame.pack(fill=tk.X, pady=2)
+        
+        self.rar2fs_auto_cleanup_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(cleanup_frame, text="Auto-cleanup on exit", variable=self.rar2fs_auto_cleanup_var).pack(side=tk.LEFT)
+        
+        self.rar2fs_verify_mounts_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(cleanup_frame, text="Verify mounts on startup", variable=self.rar2fs_verify_mounts_var).pack(side=tk.LEFT, padx=(20, 0))
+        
+        # Refresh controls
+        refresh_frame = ttk.Frame(advanced_section)
+        refresh_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Button(refresh_frame, text="�� Refresh All Status", command=self.refresh_rar2fs_status).pack(side=tk.LEFT, padx=5)
+        ttk.Button(refresh_frame, text="📊 View Logs", command=self.view_rar2fs_logs).pack(side=tk.LEFT, padx=5)
+        ttk.Button(refresh_frame, text="⚙️ Open Config File", command=self.open_rar2fs_config).pack(side=tk.LEFT, padx=5)
     
     def create_extraction_config_tab(self):
         """Create extraction configuration tab"""
@@ -877,7 +991,12 @@ Note: Enhanced UPnP discovery with multiple methods attempted."""
                     },
                     'rar2fs': {
                         'executable': self.rar2fs_exe_var.get(),
-                        'mount_options': self.rar2fs_options_text.get('1.0', tk.END).strip().split('\n')
+                        'mount_base': self.rar2fs_mount_base_var.get(),
+                        'mount_options': self.rar2fs_options_text.get('1.0', tk.END).strip().split('\n'),
+                        'timeout': int(self.rar2fs_timeout_var.get()),
+                        'unmount_timeout': int(self.rar2fs_unmount_timeout_var.get()),
+                        'auto_cleanup': self.rar2fs_auto_cleanup_var.get(),
+                        'verify_mounts': self.rar2fs_verify_mounts_var.get()
                     },
                     'extraction': {
                         'work_dir': self.extraction_work_var.get(),
@@ -945,8 +1064,12 @@ Note: Enhanced UPnP discovery with multiple methods attempted."""
                 config['rar2fs'] = {
                     'enabled': True,
                     'executable': self.rar2fs_exe_var.get(),
-                    'mount_base': self.vfs_mount_base_var.get(),
-                    'mount_options': self.rar2fs_options_text.get('1.0', tk.END).strip().split('\n')
+                    'mount_base': self.rar2fs_mount_base_var.get(),
+                    'mount_options': self.rar2fs_options_text.get('1.0', tk.END).strip().split('\n'),
+                    'timeout': int(self.rar2fs_timeout_var.get()),
+                    'unmount_timeout': int(self.rar2fs_unmount_timeout_var.get()),
+                    'auto_cleanup': self.rar2fs_auto_cleanup_var.get(),
+                    'verify_mounts': self.rar2fs_verify_mounts_var.get()
                 }
             
             # Save updated config
@@ -1010,10 +1133,15 @@ Note: Enhanced UPnP discovery with multiple methods attempted."""
                 
                 # rar2fs
                 rar2fs_config = mode_configs.get('rar2fs', {})
-                self.rar2fs_exe_var.set(rar2fs_config.get('executable', 'C:/cygwin64/home/User/rar2fs/rar2fs.exe'))
+                self.rar2fs_exe_var.set(rar2fs_config.get('executable', 'C:/Program Files/PlexRarBridge/rar2fs/bin/rar2fs.exe'))
+                self.rar2fs_mount_base_var.set(rar2fs_config.get('mount_base', 'C:/PlexRarBridge/rar2fs_mounts'))
                 mount_options = rar2fs_config.get('mount_options', ['uid=-1', 'gid=-1', 'allow_other'])
                 self.rar2fs_options_text.delete('1.0', tk.END)
                 self.rar2fs_options_text.insert(tk.END, '\n'.join(mount_options))
+                self.rar2fs_timeout_var.set(str(rar2fs_config.get('timeout', 60)))
+                self.rar2fs_unmount_timeout_var.set(str(rar2fs_config.get('unmount_timeout', 30)))
+                self.rar2fs_auto_cleanup_var.set(rar2fs_config.get('auto_cleanup', True))
+                self.rar2fs_verify_mounts_var.set(rar2fs_config.get('verify_mounts', True))
                 
                 # Extraction
                 extraction_config = mode_configs.get('extraction', {})
@@ -1378,6 +1506,12 @@ Note: Enhanced UPnP discovery with multiple methods attempted."""
         if filename:
             self.rar2fs_exe_var.set(filename)
     
+    def browse_rar2fs_mount_base(self):
+        """Browse for rar2fs mount base directory"""
+        directory = filedialog.askdirectory(title="Select rar2fs Mount Base Directory")
+        if directory:
+            self.rar2fs_mount_base_var.set(directory)
+    
     def browse_work_dir(self):
         """Browse for work directory"""
         directory = filedialog.askdirectory(title="Select Work Directory")
@@ -1423,6 +1557,359 @@ Note: Enhanced UPnP discovery with multiple methods attempted."""
         self.pairs_tree.item(selected[0], values=(
             values[0], values[1], values[2], values[3], 'OK'
         ))
+    
+    def check_rar2fs_dependencies(self):
+        """Check rar2fs dependencies (WinFSP, etc.)"""
+        try:
+            dependencies_status = []
+            
+            # Check WinFSP
+            try:
+                result = subprocess.run(['sc', 'query', 'WinFsp'], 
+                                      capture_output=True, text=True)
+                if result.returncode == 0:
+                    dependencies_status.append("✅ WinFSP service: Running")
+                else:
+                    dependencies_status.append("❌ WinFSP service: Not found")
+            except:
+                dependencies_status.append("❌ WinFSP service: Error checking")
+            
+            # Check rar2fs executable
+            rar2fs_exe = Path(self.rar2fs_exe_var.get())
+            if rar2fs_exe.exists():
+                dependencies_status.append(f"✅ rar2fs executable: Found at {rar2fs_exe}")
+            else:
+                dependencies_status.append(f"❌ rar2fs executable: Not found at {rar2fs_exe}")
+            
+            # Check mount directory
+            mount_base = Path(self.rar2fs_mount_base_var.get())
+            if mount_base.exists():
+                dependencies_status.append(f"✅ Mount directory: Available at {mount_base}")
+            else:
+                dependencies_status.append(f"⚠️ Mount directory: Will be created at {mount_base}")
+            
+            # Show results
+            status_text = "\n".join(dependencies_status)
+            messagebox.showinfo("rar2fs Dependencies Check", status_text)
+            
+        except Exception as e:
+            messagebox.showerror("Dependency Check Error", f"Error checking dependencies: {e}")
+    
+    def start_rar2fs_service(self):
+        """Start rar2fs service"""
+        try:
+            self.rar2fs_service_status_label.config(text="🔄 Starting rar2fs service...", foreground='blue')
+            self.parent.update()
+            
+            # Import rar2fs handler if available
+            try:
+                from rar2fs_handler import Rar2fsHandler
+                
+                # Create handler with current configuration
+                config = {
+                    'executable': self.rar2fs_exe_var.get(),
+                    'mount_base': self.rar2fs_mount_base_var.get(),
+                    'mount_options': self.rar2fs_options_text.get('1.0', tk.END).strip().split('\n'),
+                    'timeout': int(self.rar2fs_timeout_var.get())
+                }
+                
+                handler = Rar2fsHandler(config)
+                
+                # Initialize handler
+                if handler.initialize():
+                    self.rar2fs_service_status_label.config(text="✅ rar2fs service: Started successfully", foreground='green')
+                    messagebox.showinfo("Service Started", "rar2fs service started successfully!")
+                    self.refresh_rar2fs_status()
+                else:
+                    self.rar2fs_service_status_label.config(text="❌ rar2fs service: Failed to start", foreground='red')
+                    messagebox.showerror("Service Error", "Failed to start rar2fs service. Check configuration and dependencies.")
+                    
+            except ImportError:
+                # Fallback: try to start via direct command
+                rar2fs_exe = self.rar2fs_exe_var.get()
+                if Path(rar2fs_exe).exists():
+                    # Create mount base directory if it doesn't exist
+                    mount_base = Path(self.rar2fs_mount_base_var.get())
+                    mount_base.mkdir(parents=True, exist_ok=True)
+                    
+                    self.rar2fs_service_status_label.config(text="✅ rar2fs ready for manual mounting", foreground='green')
+                    messagebox.showinfo("Service Ready", "rar2fs is ready. Mount archives manually using the configured executable.")
+                else:
+                    self.rar2fs_service_status_label.config(text="❌ rar2fs executable not found", foreground='red')
+                    messagebox.showerror("Service Error", "rar2fs executable not found. Please install rar2fs first.")
+                    
+        except Exception as e:
+            self.rar2fs_service_status_label.config(text=f"❌ rar2fs service: Error - {e}", foreground='red')
+            messagebox.showerror("Service Error", f"Error starting rar2fs service: {e}")
+    
+    def stop_rar2fs_service(self):
+        """Stop rar2fs service"""
+        try:
+            self.rar2fs_service_status_label.config(text="🔄 Stopping rar2fs service...", foreground='blue')
+            self.parent.update()
+            
+            # Try to unmount all rar2fs mounts first
+            self.unmount_all_rar2fs()
+            
+            # Import rar2fs handler if available
+            try:
+                from rar2fs_handler import Rar2fsHandler
+                
+                config = {
+                    'executable': self.rar2fs_exe_var.get(),
+                    'mount_base': self.rar2fs_mount_base_var.get(),
+                    'unmount_timeout': int(self.rar2fs_unmount_timeout_var.get())
+                }
+                
+                handler = Rar2fsHandler(config)
+                
+                # Cleanup/stop handler
+                if handler.cleanup():
+                    self.rar2fs_service_status_label.config(text="✅ rar2fs service: Stopped successfully", foreground='green')
+                    messagebox.showinfo("Service Stopped", "rar2fs service stopped and all mounts cleaned up.")
+                else:
+                    self.rar2fs_service_status_label.config(text="⚠️ rar2fs service: Stopped with warnings", foreground='orange')
+                    messagebox.showwarning("Service Stopped", "rar2fs service stopped, but some mounts may still be active.")
+                    
+            except ImportError:
+                # Fallback: basic cleanup
+                self.rar2fs_service_status_label.config(text="✅ rar2fs service: Stopped (manual mode)", foreground='green')
+                messagebox.showinfo("Service Stopped", "rar2fs stopped. Any active mounts should be unmounted manually.")
+            
+            self.refresh_rar2fs_status()
+            
+        except Exception as e:
+            self.rar2fs_service_status_label.config(text=f"❌ rar2fs service: Error - {e}", foreground='red')
+            messagebox.showerror("Service Error", f"Error stopping rar2fs service: {e}")
+    
+    def restart_rar2fs_service(self):
+        """Restart rar2fs service"""
+        try:
+            self.rar2fs_service_status_label.config(text="🔄 Restarting rar2fs service...", foreground='blue')
+            self.parent.update()
+            
+            # Stop first
+            self.stop_rar2fs_service()
+            
+            # Wait a moment
+            self.parent.after(2000, self.start_rar2fs_service)  # Start after 2 seconds
+            
+        except Exception as e:
+            self.rar2fs_service_status_label.config(text=f"❌ rar2fs service: Restart failed - {e}", foreground='red')
+            messagebox.showerror("Service Error", f"Error restarting rar2fs service: {e}")
+    
+    def view_rar2fs_mounts(self):
+        """View active rar2fs mounts"""
+        try:
+            mount_info = []
+            mount_base = Path(self.rar2fs_mount_base_var.get())
+            
+            if mount_base.exists():
+                # Check for mount directories
+                for mount_dir in mount_base.iterdir():
+                    if mount_dir.is_dir():
+                        # Check if this is an active mount
+                        try:
+                            # Try to list contents to see if it's mounted
+                            contents = list(mount_dir.iterdir())
+                            if contents:
+                                mount_info.append(f"📁 {mount_dir.name} - {len(contents)} items")
+                            else:
+                                mount_info.append(f"📂 {mount_dir.name} - Empty/Unmounted")
+                        except:
+                            mount_info.append(f"❌ {mount_dir.name} - Access Error")
+            
+            if not mount_info:
+                mount_info = ["No active mounts found"]
+            
+            # Update the mounts display
+            self.rar2fs_mounts_text.config(state=tk.NORMAL)
+            self.rar2fs_mounts_text.delete('1.0', tk.END)
+            self.rar2fs_mounts_text.insert(tk.END, '\n'.join(mount_info))
+            self.rar2fs_mounts_text.config(state=tk.DISABLED)
+            
+        except Exception as e:
+            self.rar2fs_mounts_text.config(state=tk.NORMAL)
+            self.rar2fs_mounts_text.delete('1.0', tk.END)
+            self.rar2fs_mounts_text.insert(tk.END, f"Error viewing mounts: {e}")
+            self.rar2fs_mounts_text.config(state=tk.DISABLED)
+    
+    def open_mount_directory(self):
+        """Open rar2fs mount directory in Explorer"""
+        try:
+            mount_base = Path(self.rar2fs_mount_base_var.get())
+            mount_base.mkdir(parents=True, exist_ok=True)
+            
+            # Open in Windows Explorer
+            subprocess.run(['explorer', str(mount_base)], check=True)
+            
+        except Exception as e:
+            messagebox.showerror("Open Directory Error", f"Error opening mount directory: {e}")
+    
+    def unmount_all_rar2fs(self):
+        """Unmount all active rar2fs mounts"""
+        try:
+            mount_base = Path(self.rar2fs_mount_base_var.get())
+            unmounted_count = 0
+            errors = []
+            
+            if mount_base.exists():
+                # Try to unmount each directory
+                for mount_dir in mount_base.iterdir():
+                    if mount_dir.is_dir():
+                        try:
+                            # Try to unmount using fusermount (if available)
+                            result = subprocess.run(['fusermount', '-u', str(mount_dir)], 
+                                                  capture_output=True, text=True, timeout=30)
+                            if result.returncode == 0:
+                                unmounted_count += 1
+                            else:
+                                errors.append(f"Failed to unmount {mount_dir.name}")
+                        except FileNotFoundError:
+                            # fusermount not available, try rmdir
+                            try:
+                                mount_dir.rmdir()
+                                unmounted_count += 1
+                            except OSError:
+                                errors.append(f"Could not remove {mount_dir.name}")
+                        except subprocess.TimeoutExpired:
+                            errors.append(f"Timeout unmounting {mount_dir.name}")
+                        except Exception as e:
+                            errors.append(f"Error with {mount_dir.name}: {e}")
+            
+            # Show results
+            if unmounted_count > 0 or not errors:
+                message = f"Successfully unmounted {unmounted_count} mount(s)"
+                if errors:
+                    message += f"\n\nWarnings:\n" + '\n'.join(errors)
+                messagebox.showinfo("Unmount Complete", message)
+            else:
+                messagebox.showerror("Unmount Failed", "Failed to unmount:\n" + '\n'.join(errors))
+            
+            # Refresh mount view
+            self.view_rar2fs_mounts()
+            
+        except Exception as e:
+            messagebox.showerror("Unmount Error", f"Error during unmount operation: {e}")
+    
+    def silent_refresh_rar2fs_status(self):
+        """Silently refresh rar2fs status information without message boxes"""
+        try:
+            # Test rar2fs executable silently
+            rar2fs_exe = Path(self.rar2fs_exe_var.get())
+            
+            if not rar2fs_exe.exists():
+                self.rar2fs_status_label.config(text="❌ rar2fs: Executable not found", foreground='red')
+            else:
+                try:
+                    # Test executable silently
+                    result = subprocess.run([str(rar2fs_exe), '--help'], 
+                                          capture_output=True, text=True, timeout=10)
+                    
+                    if result.returncode == 0:
+                        self.rar2fs_status_label.config(text="✅ rar2fs: Configuration OK", foreground='green')
+                    else:
+                        self.rar2fs_status_label.config(text="❌ rar2fs: Executable test failed", foreground='red')
+                        
+                except Exception as e:
+                    self.rar2fs_status_label.config(text=f"❌ rar2fs: {e}", foreground='red')
+            
+            # Update mount view silently
+            self.view_rar2fs_mounts()
+            
+            # Check service status silently
+            try:
+                # Check if WinFSP service is running
+                result = subprocess.run(['sc', 'query', 'WinFsp'], 
+                                      capture_output=True, text=True)
+                if result.returncode == 0 and "RUNNING" in result.stdout:
+                    self.rar2fs_service_status_label.config(text="✅ WinFSP service: Running", foreground='green')
+                else:
+                    self.rar2fs_service_status_label.config(text="❌ WinFSP service: Not running", foreground='red')
+            except:
+                self.rar2fs_service_status_label.config(text="❓ WinFSP service: Status unknown", foreground='orange')
+            
+        except Exception as e:
+            # Silent error handling - just update status label
+            self.rar2fs_status_label.config(text=f"❌ rar2fs: Error - {e}", foreground='red')
+    
+    def refresh_rar2fs_status(self):
+        """Refresh all rar2fs status information"""
+        try:
+            # Test rar2fs executable
+            self.test_rar2fs()
+            
+            # Update mount view
+            self.view_rar2fs_mounts()
+            
+            # Check service status
+            try:
+                # Check if WinFSP service is running
+                result = subprocess.run(['sc', 'query', 'WinFsp'], 
+                                      capture_output=True, text=True)
+                if result.returncode == 0 and "RUNNING" in result.stdout:
+                    self.rar2fs_service_status_label.config(text="✅ WinFSP service: Running", foreground='green')
+                else:
+                    self.rar2fs_service_status_label.config(text="❌ WinFSP service: Not running", foreground='red')
+            except:
+                self.rar2fs_service_status_label.config(text="❓ WinFSP service: Status unknown", foreground='orange')
+            
+            messagebox.showinfo("Status Refresh", "rar2fs status information refreshed!")
+            
+        except Exception as e:
+            messagebox.showerror("Refresh Error", f"Error refreshing status: {e}")
+    
+    def view_rar2fs_logs(self):
+        """View rar2fs logs"""
+        try:
+            # Look for common log locations
+            log_locations = [
+                self.script_dir / "logs" / "rar2fs.log",
+                self.script_dir / "logs" / "bridge.log",
+                Path("C:/PlexRarBridge/logs/rar2fs.log"),
+                Path("C:/Program Files/PlexRarBridge/logs/rar2fs.log")
+            ]
+            
+            log_found = False
+            for log_path in log_locations:
+                if log_path.exists():
+                    # Open log file in default text editor
+                    subprocess.run(['notepad.exe', str(log_path)])
+                    log_found = True
+                    break
+            
+            if not log_found:
+                messagebox.showinfo("Logs Not Found", 
+                    "No rar2fs log files found in standard locations.\n\n"
+                    "Check the main bridge.log for rar2fs-related messages.")
+                
+        except Exception as e:
+            messagebox.showerror("Log Viewer Error", f"Error opening logs: {e}")
+    
+    def open_rar2fs_config(self):
+        """Open rar2fs configuration file"""
+        try:
+            # Look for config files
+            config_locations = [
+                self.script_dir / "config.yaml",
+                self.script_dir / "enhanced_setup_config.json",
+                Path("C:/Program Files/PlexRarBridge/config.yaml")
+            ]
+            
+            config_found = False
+            for config_path in config_locations:
+                if config_path.exists():
+                    # Open config file in default text editor
+                    subprocess.run(['notepad.exe', str(config_path)])
+                    config_found = True
+                    break
+            
+            if not config_found:
+                messagebox.showwarning("Config Not Found", 
+                    "No configuration files found in standard locations.")
+                
+        except Exception as e:
+            messagebox.showerror("Config Editor Error", f"Error opening configuration: {e}")
 
 
 class DirectoryPairDialog:

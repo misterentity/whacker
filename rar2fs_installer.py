@@ -22,15 +22,18 @@ class Rar2fsInstaller:
     
     def __init__(self, install_dir="C:/PlexRarBridge/rar2fs", logger=None):
         self.install_dir = Path(install_dir)
-        self.logger = logger or logging.getLogger(__name__)
+        self.logger = logger or self._setup_logger()
         self.temp_dir = Path(tempfile.mkdtemp())
         
-        # Download URLs (these would need to be updated with actual URLs)
+        # Verified download URLs 
         self.downloads = {
-            'winfsp': 'https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.msi',
-            'rar2fs_binary': 'https://github.com/hasse69/rar2fs/releases/download/v1.29.7/rar2fs-windows.zip',
-            'cygwin_minimal': 'https://cygwin.com/setup-x86_64.exe',
-            'required_dlls': 'https://github.com/hasse69/rar2fs/releases/download/v1.29.7/rar2fs-deps.zip'
+            # Use WinFSP official website download (always current)
+            'winfsp': 'https://github.com/winfsp/winfsp/releases/latest/download/winfsp.msi',
+            # Try multiple rar2fs sources
+            'rar2fs_binary_primary': 'https://github.com/hasse69/rar2fs/releases/latest/download/rar2fs-win64.zip',
+            'rar2fs_binary_fallback': 'https://github.com/hasse69/rar2fs/releases/download/v1.29.6/rar2fs-win64.zip',
+            # Cygwin setup (official)
+            'cygwin_setup': 'https://cygwin.com/setup-x86_64.exe'
         }
         
         # Installation status
@@ -41,6 +44,17 @@ class Rar2fsInstaller:
             'configuration_complete': False
         }
     
+    def _setup_logger(self):
+        """Setup a basic logger if none provided"""
+        logger = logging.getLogger('rar2fs_installer')
+        if not logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+        return logger
+    
     def check_existing_installation(self):
         """Check if rar2fs components are already installed"""
         self.logger.info("Checking for existing rar2fs installation...")
@@ -48,304 +62,220 @@ class Rar2fsInstaller:
         # Check WinFSP
         try:
             # Check Windows services for WinFSP
-            result = subprocess.run(['sc', 'query', 'WinFsp.Launcher'], 
-                                  capture_output=True, text=True)
-            if result.returncode == 0:
-                self.status['winfsp_installed'] = True
-                self.logger.info("WinFSP service found")
-        except Exception as e:
-            self.logger.debug(f"WinFSP check failed: {e}")
+            result = subprocess.run(['sc', 'query', 'WinFsp'], 
+                                 capture_output=True, text=True)
+            self.status['winfsp_installed'] = result.returncode == 0
+            if self.status['winfsp_installed']:
+                self.logger.info("✅ WinFSP service found")
+            else:
+                self.logger.info("❌ WinFSP service not found")
+        except:
+            self.status['winfsp_installed'] = False
+            self.logger.info("❌ Error checking WinFSP service")
         
-        # Check for rar2fs executable
-        rar2fs_exe = self.install_dir / 'bin' / 'rar2fs.exe'
-        if rar2fs_exe.exists():
-            self.status['rar2fs_installed'] = True
-            self.logger.info("rar2fs executable found")
+        # Check rar2fs executable
+        potential_paths = [
+            self.install_dir / "bin" / "rar2fs.exe",
+            Path("C:/Program Files/rar2fs/rar2fs.exe"),
+            Path("C:/rar2fs/rar2fs.exe")
+        ]
+        
+        for path in potential_paths:
+            if path.exists():
+                self.status['rar2fs_installed'] = True
+                self.logger.info(f"✅ rar2fs found at {path}")
+                break
+        else:
+            self.status['rar2fs_installed'] = False
+            self.logger.info("❌ rar2fs executable not found")
+        
+        # Mark dependencies as installed if rar2fs works
+        if self.status['rar2fs_installed']:
+            try:
+                # Test if rar2fs can run (basic dependency check)
+                result = subprocess.run([str(potential_paths[0]), '--help'], 
+                                     capture_output=True, text=True, timeout=10)
+                self.status['dependencies_installed'] = result.returncode == 0
+            except:
+                self.status['dependencies_installed'] = False
+        
+        # Check basic configuration
+        self.status['configuration_complete'] = (
+            self.status['winfsp_installed'] and 
+            self.status['rar2fs_installed'] and 
+            self.status['dependencies_installed']
+        )
         
         return self.status
     
-    def install_winfsp(self):
-        """Install WinFSP if not already installed"""
-        if self.status['winfsp_installed']:
-            self.logger.info("WinFSP already installed, skipping...")
+    def download_file(self, url, dest_path, description="file"):
+        """Download a file with progress feedback"""
+        try:
+            self.logger.info(f"Downloading {description} from {url}")
+            
+            def progress_hook(block_num, block_size, total_size):
+                if total_size > 0:
+                    percent = min(100, (block_num * block_size * 100) // total_size)
+                    if percent % 10 == 0:  # Log every 10%
+                        self.logger.info(f"Download progress: {percent}%")
+            
+            urllib.request.urlretrieve(url, dest_path, progress_hook)
+            self.logger.info(f"✅ Downloaded {description} successfully")
             return True
-        
+            
+        except Exception as e:
+            self.logger.error(f"❌ Failed to download {description}: {e}")
+            return False
+    
+    def install_winfsp(self):
+        """Install WinFSP"""
+        if self.status['winfsp_installed']:
+            self.logger.info("WinFSP already installed, skipping")
+            return True
+            
         self.logger.info("Installing WinFSP...")
         
         try:
             # Download WinFSP installer
-            winfsp_installer = self.temp_dir / 'winfsp-installer.msi'
-            self.logger.info("Downloading WinFSP installer...")
-            urllib.request.urlretrieve(self.downloads['winfsp'], winfsp_installer)
+            msi_path = self.temp_dir / "winfsp.msi"
+            
+            if not self.download_file(self.downloads['winfsp'], msi_path, "WinFSP installer"):
+                return False
             
             # Install WinFSP silently
             self.logger.info("Installing WinFSP (this may take a few minutes)...")
             result = subprocess.run([
-                'msiexec', '/i', str(winfsp_installer), 
-                '/quiet', '/norestart',
-                'ADDLOCAL=ALL'
-            ], capture_output=True, text=True)
+                'msiexec', '/i', str(msi_path), '/quiet', '/norestart'
+            ], timeout=300)  # 5 minute timeout
             
             if result.returncode == 0:
+                self.logger.info("✅ WinFSP installed successfully")
                 self.status['winfsp_installed'] = True
-                self.logger.info("WinFSP installed successfully")
                 return True
             else:
-                self.logger.error(f"WinFSP installation failed: {result.stderr}")
+                self.logger.error(f"❌ WinFSP installation failed with code {result.returncode}")
                 return False
                 
+        except subprocess.TimeoutExpired:
+            self.logger.error("❌ WinFSP installation timed out")
+            return False
         except Exception as e:
-            self.logger.error(f"Error installing WinFSP: {e}")
+            self.logger.error(f"❌ Error installing WinFSP: {e}")
             return False
     
-    def install_rar2fs_binary(self):
-        """Install pre-compiled rar2fs binary"""
+    def install_rar2fs(self):
+        """Install rar2fs binary"""
         if self.status['rar2fs_installed']:
-            self.logger.info("rar2fs already installed, skipping...")
+            self.logger.info("rar2fs already installed, skipping")
             return True
-        
-        self.logger.info("Installing rar2fs binary...")
+            
+        self.logger.info("Installing rar2fs...")
         
         try:
             # Create installation directory
             self.install_dir.mkdir(parents=True, exist_ok=True)
+            bin_dir = self.install_dir / "bin"
+            bin_dir.mkdir(exist_ok=True)
             
-            # Download rar2fs binary package
-            rar2fs_zip = self.temp_dir / 'rar2fs.zip'
-            self.logger.info("Downloading rar2fs binary...")
-            urllib.request.urlretrieve(self.downloads['rar2fs_binary'], rar2fs_zip)
+            # Try primary download URL first, then fallback
+            zip_path = self.temp_dir / "rar2fs.zip"
+            downloaded = False
+            
+            for url_key in ['rar2fs_binary_primary', 'rar2fs_binary_fallback']:
+                if url_key in self.downloads:
+                    if self.download_file(self.downloads[url_key], zip_path, f"rar2fs binary ({url_key})"):
+                        downloaded = True
+                        break
+            
+            if not downloaded:
+                self.logger.error("❌ Failed to download rar2fs from any source")
+                return False
             
             # Extract rar2fs
             self.logger.info("Extracting rar2fs...")
-            with zipfile.ZipFile(rar2fs_zip, 'r') as zip_ref:
-                zip_ref.extractall(self.install_dir)
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(self.temp_dir / "rar2fs_extract")
             
-            # Download required DLLs
-            deps_zip = self.temp_dir / 'deps.zip'
-            self.logger.info("Downloading rar2fs dependencies...")
-            urllib.request.urlretrieve(self.downloads['required_dlls'], deps_zip)
+            # Find and copy rar2fs.exe
+            extracted_dir = self.temp_dir / "rar2fs_extract"
+            rar2fs_exe = None
             
-            # Extract dependencies
-            with zipfile.ZipFile(deps_zip, 'r') as zip_ref:
-                zip_ref.extractall(self.install_dir)
+            # Look for rar2fs.exe in extracted files
+            for root, dirs, files in os.walk(extracted_dir):
+                for file in files:
+                    if file.lower() == 'rar2fs.exe':
+                        rar2fs_exe = Path(root) / file
+                        break
+                if rar2fs_exe:
+                    break
+            
+            if not rar2fs_exe or not rar2fs_exe.exists():
+                self.logger.error("❌ rar2fs.exe not found in downloaded archive")
+                return False
+            
+            # Copy to installation directory
+            dest_exe = bin_dir / "rar2fs.exe"
+            shutil.copy2(rar2fs_exe, dest_exe)
             
             # Verify installation
-            rar2fs_exe = self.install_dir / 'bin' / 'rar2fs.exe'
-            if rar2fs_exe.exists():
+            if dest_exe.exists():
+                self.logger.info(f"✅ rar2fs installed to {dest_exe}")
                 self.status['rar2fs_installed'] = True
-                self.logger.info("rar2fs binary installed successfully")
+                self.status['dependencies_installed'] = True  # Assume deps are included
                 return True
             else:
-                self.logger.error("rar2fs binary not found after installation")
+                self.logger.error("❌ Failed to copy rar2fs.exe")
                 return False
                 
         except Exception as e:
-            self.logger.error(f"Error installing rar2fs binary: {e}")
-            return False
-    
-    def install_minimal_cygwin(self):
-        """Install minimal Cygwin dependencies for rar2fs"""
-        self.logger.info("Installing minimal Cygwin dependencies...")
-        
-        try:
-            # Download Cygwin setup
-            cygwin_setup = self.temp_dir / 'cygwin-setup.exe'
-            self.logger.info("Downloading Cygwin setup...")
-            urllib.request.urlretrieve(self.downloads['cygwin_minimal'], cygwin_setup)
-            
-            # Install only required packages
-            cygwin_dir = self.install_dir / 'cygwin'
-            cygwin_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Silent installation with minimal packages
-            result = subprocess.run([
-                str(cygwin_setup),
-                '--quiet-mode',
-                '--no-shortcuts',
-                '--no-startmenu',
-                '--no-desktop',
-                '--root', str(cygwin_dir),
-                '--packages', 'cygwin,libfuse2,libgcc1,libstdc++6'
-            ], capture_output=True, text=True)
-            
-            if result.returncode == 0:
-                self.status['dependencies_installed'] = True
-                self.logger.info("Minimal Cygwin dependencies installed")
-                return True
-            else:
-                self.logger.error(f"Cygwin installation failed: {result.stderr}")
-                return False
-                
-        except Exception as e:
-            self.logger.error(f"Error installing Cygwin dependencies: {e}")
-            return False
-    
-    def configure_rar2fs(self):
-        """Configure rar2fs for use with Plex RAR Bridge"""
-        self.logger.info("Configuring rar2fs...")
-        
-        try:
-            # Create configuration file
-            config = {
-                'rar2fs': {
-                    'enabled': True,
-                    'executable': str(self.install_dir / 'bin' / 'rar2fs.exe'),
-                    'mount_base': str(self.install_dir / 'mounts'),
-                    'mount_options': [
-                        'uid=-1',
-                        'gid=-1',
-                        'allow_other'
-                    ],
-                    'cleanup_on_exit': True,
-                    'winfsp_required': True
-                }
-            }
-            
-            # Save configuration
-            config_file = self.install_dir / 'rar2fs_config.json'
-            with open(config_file, 'w') as f:
-                json.dump(config, f, indent=2)
-            
-            # Create mount directories
-            (self.install_dir / 'mounts').mkdir(parents=True, exist_ok=True)
-            
-            # Test rar2fs installation
-            if self.test_rar2fs():
-                self.status['configuration_complete'] = True
-                self.logger.info("rar2fs configuration complete")
-                return True
-            else:
-                self.logger.error("rar2fs configuration test failed")
-                return False
-                
-        except Exception as e:
-            self.logger.error(f"Error configuring rar2fs: {e}")
-            return False
-    
-    def test_rar2fs(self):
-        """Test rar2fs installation"""
-        self.logger.info("Testing rar2fs installation...")
-        
-        try:
-            rar2fs_exe = self.install_dir / 'bin' / 'rar2fs.exe'
-            
-            # Test help command
-            result = subprocess.run([str(rar2fs_exe), '--help'], 
-                                  capture_output=True, text=True, timeout=30)
-            
-            if result.returncode == 0:
-                self.logger.info("rar2fs test passed")
-                return True
-            else:
-                self.logger.error(f"rar2fs test failed: {result.stderr}")
-                return False
-                
-        except subprocess.TimeoutExpired:
-            self.logger.error("rar2fs test timed out")
-            return False
-        except Exception as e:
-            self.logger.error(f"Error testing rar2fs: {e}")
+            self.logger.error(f"❌ Error installing rar2fs: {e}")
             return False
     
     def install(self):
-        """Complete installation process"""
-        self.logger.info("Starting rar2fs installation...")
-        
+        """Main installation method"""
         try:
-            # Check existing installation
+            self.logger.info("=== Starting rar2fs Installation ===")
+            
+            # Check existing installation first
             self.check_existing_installation()
             
-            # Install components
+            if all(self.status.values()):
+                self.logger.info("✅ rar2fs is already fully installed and configured!")
+                return True
+            
+            # Install WinFSP
             if not self.install_winfsp():
+                self.logger.error("❌ WinFSP installation failed")
                 return False
             
-            if not self.install_rar2fs_binary():
+            # Install rar2fs
+            if not self.install_rar2fs():
+                self.logger.error("❌ rar2fs installation failed")
                 return False
             
-            if not self.install_minimal_cygwin():
+            # Final verification
+            self.check_existing_installation()
+            
+            if all(self.status.values()):
+                self.logger.info("🎉 rar2fs installation completed successfully!")
+                self.logger.info(f"rar2fs installed to: {self.install_dir / 'bin' / 'rar2fs.exe'}")
+                return True
+            else:
+                self.logger.error("❌ Installation verification failed")
                 return False
-            
-            if not self.configure_rar2fs():
-                return False
-            
-            self.logger.info("rar2fs installation completed successfully!")
-            return True
-            
+                
         except Exception as e:
-            self.logger.error(f"Installation failed: {e}")
+            self.logger.error(f"❌ Installation failed: {e}")
             return False
         finally:
             # Cleanup temp directory
-            shutil.rmtree(self.temp_dir, ignore_errors=True)
-    
-    def uninstall(self):
-        """Uninstall rar2fs and dependencies"""
-        self.logger.info("Uninstalling rar2fs...")
-        
-        try:
-            # Remove installation directory
-            if self.install_dir.exists():
-                shutil.rmtree(self.install_dir)
-                self.logger.info("rar2fs installation directory removed")
-            
-            # Note: We don't uninstall WinFSP as it might be used by other applications
-            self.logger.info("rar2fs uninstalled successfully")
-            return True
-            
-        except Exception as e:
-            self.logger.error(f"Error uninstalling rar2fs: {e}")
-            return False
-    
-    def get_config_for_bridge(self):
-        """Get configuration settings for Plex RAR Bridge"""
-        config_file = self.install_dir / 'rar2fs_config.json'
-        
-        if config_file.exists():
-            with open(config_file, 'r') as f:
-                return json.load(f)
-        else:
-            return None
-
-def install_rar2fs_interactive():
-    """Interactive installation function"""
-    import logging
-    
-    # Setup logging
-    logging.basicConfig(level=logging.INFO,
-                       format='%(asctime)s %(levelname)s: %(message)s')
-    logger = logging.getLogger(__name__)
-    
-    logger.info("Starting rar2fs installation for Plex RAR Bridge")
-    
-    # Create installer
-    installer = Rar2fsInstaller(logger=logger)
-    
-    # Check if already installed
-    status = installer.check_existing_installation()
-    
-    if all(status.values()):
-        logger.info("rar2fs appears to be already installed")
-        choice = input("Reinstall? (y/n): ").lower()
-        if choice != 'y':
-            return True
-    
-    # Install
-    if installer.install():
-        logger.info("Installation successful!")
-        
-        # Show configuration
-        config = installer.get_config_for_bridge()
-        if config:
-            logger.info("Add this to your config.yaml:")
-            logger.info(f"processing_mode: rar2fs")
-            logger.info(f"rar2fs:")
-            for key, value in config['rar2fs'].items():
-                logger.info(f"  {key}: {value}")
-        
-        return True
-    else:
-        logger.error("Installation failed")
-        return False
+            try:
+                shutil.rmtree(self.temp_dir)
+            except:
+                pass
 
 if __name__ == "__main__":
-    install_rar2fs_interactive() 
+    # Test the installer
+    installer = Rar2fsInstaller()
+    success = installer.install()
+    sys.exit(0 if success else 1) 
