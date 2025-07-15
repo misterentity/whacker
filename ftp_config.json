@@ -1,0 +1,51 @@
+{
+  "connections": [
+    {
+      "name": "Default Server",
+      "host": "",
+      "port": 21,
+      "username": "",
+      "password": "",
+      "ssl_mode": "Explicit",
+      "download_dir": "",
+      "file_filter": "*.rar"
+    },
+    {
+      "name": "Example Server 1",
+      "host": "ftp.example.com",
+      "port": 21,
+      "username": "your_username",
+      "password": "your_password",
+      "ssl_mode": "Explicit",
+      "download_dir": "C:\\PlexRarBridge\\rar_watch",
+      "movie_dirs": "D:/x265",
+      "tv_dirs": "D:/tv",
+      "file_filter": "*.rar"
+    },
+    {
+      "name": "Example Server 2",
+      "host": "secure.example.org",
+      "port": 990,
+      "username": "example_user",
+      "password": "example_password",
+      "ssl_mode": "Implicit",
+      "download_dir": "C:\\PlexRarBridge\\rar_watch",
+      "movie_dirs": "D:/movies",
+      "tv_dirs": "D:/tv",
+      "file_filter": "*.rar"
+    }
+  ],
+  "last_used": "Example Server 1",
+  "settings": {
+    "auto_connect": false,
+    "auto_download_rar": true,
+    "transfer_mode": "Binary",
+    "max_concurrent_downloads": 3
+  },
+  "imdb": {
+    "api_key": "your_omdb_api_key_here",
+    "enable_posters": true,
+    "cache_days": 7,
+    "api_url": "http://www.omdbapi.com/"
+  }
+} 
