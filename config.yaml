@@ -1,0 +1,63 @@
+handbrake:
+  enabled: false
+  executable: C:/Program Files/HandBrake/HandBrakeCLI.exe
+  preset: Fast 1080p30
+  quality: 22
+logging:
+  backup_count: 5
+  level: INFO
+  max_log_size: 10485760
+options:
+  delete_archives: false
+  duplicate_check: true
+  enable_gui: false
+  enable_reencoding: false
+  extensions:
+  - .rar
+  - .r00
+  - .r01
+  - .r02
+  - .r03
+  - .r04
+  - .r05
+  - .r06
+  - .r07
+  - .r08
+  - .r09
+  file_stabilization_time: 10
+  max_file_age: 3600
+  max_retry_age_hours: 4
+  max_retry_attempts: 20
+  processing_mode: python_vfs
+  retry_interval: 10
+  scan_existing_files: true
+paths:
+  archive: C:\PlexRarBridge\archive
+  failed: C:\PlexRarBridge\failed
+  target: D:\x265
+  watch: D:\x265
+  work: C:\PlexRarBridge\work
+plex:
+  host: http://127.0.0.1:32400
+  library_key: 1
+  token: YOUR_PLEX_TOKEN_HERE
+python_vfs:
+  mount_base: D:/x265
+  port_range:
+  - 8765
+  - 8865
+rar2fs:
+  cleanup_on_exit: true
+  enabled: false
+  executable: C:/cygwin64/home/User/rar2fs/rar2fs.exe
+  mount_base: C:/PlexRarBridge/mounts
+  mount_options:
+  - uid=-1
+  - gid=-1
+  - allow_other
+  winfsp_required: true
+upnp:
+  enabled: true
+  lease_duration: 3600
+  retry_count: 3
+  timeout: 10 

@@ -1,0 +1,45 @@
+{
+  "plex": {
+    "host": "http://127.0.0.1:32400",
+    "token": "YOUR_PLEX_TOKEN_HERE",
+    "libraries": [
+      {
+        "key": "1",
+        "title": "Movies",
+        "type": "movie"
+      },
+      {
+        "key": "2",
+        "title": "TV Shows",
+        "type": "show"
+      }
+    ]
+  },
+  "directory_pairs": [
+    {
+      "source": "D:/x265",
+      "target": "D:/x265",
+      "library_key": "1",
+      "library_title": "Movies",
+      "enabled": true
+    },
+    {
+      "source": "C:/Downloads/Movies",
+      "target": "D:/Media/Movies",
+      "library_key": "1",
+      "library_title": "Movies",
+      "enabled": false
+    },
+    {
+      "source": "C:/Downloads/TV",
+      "target": "D:/Media/TV Shows",
+      "library_key": "2",
+      "library_title": "TV Shows",
+      "enabled": false
+    }
+  ],
+  "options": {
+    "recursive_monitoring": true,
+    "auto_start_service": true
+  }
+} 
