@@ -706,7 +706,7 @@ class PlexRarBridgeGUI:
         self.running = True
         
         # Initialize IMDb helper
-        self.imdb_helper = IMDbHelper()
+        self.imdb_helper = IMDbHelper(self.get_omdb_api_key())
         
         # Setup FTP logging
         self.setup_ftp_logging()
@@ -721,6 +721,33 @@ class PlexRarBridgeGUI:
         
         # Start GUI update loop
         self.update_gui_loop()
+    
+    def get_omdb_api_key(self):
+        """Get OMDB API key from enhanced setup config or FTP config as fallback"""
+        try:
+            # First try enhanced setup configuration
+            enhanced_config_path = self.script_dir / 'enhanced_setup_config.json'
+            if enhanced_config_path.exists():
+                with open(enhanced_config_path, 'r') as f:
+                    config = json.load(f)
+                    omdb_config = config.get('omdb', {})
+                    api_key = omdb_config.get('api_key', '')
+                    if api_key and api_key.strip():
+                        return api_key.strip()
+            
+            # Fallback to FTP configuration
+            if self.ftp_config_file.exists():
+                with open(self.ftp_config_file, 'r') as f:
+                    config = json.load(f)
+                    imdb_config = config.get('imdb', {})
+                    api_key = imdb_config.get('api_key', '')
+                    if api_key and api_key.strip() and api_key != "YOUR_OMDB_API_KEY":
+                        return api_key.strip()
+            
+        except Exception as e:
+            print(f"Error loading OMDB API key: {e}")
+        
+        return None
     
     def setup_gui(self):
         """Setup the GUI layout"""
@@ -4792,11 +4819,29 @@ Progress: {thread_info['progress']}
             messagebox.showwarning("Not a Directory", "Please select a directory")
             return
         
-        # Detect content type
-        content_type = self.detect_content_type(name, self.ftp_connection.pwd() + "/" + name)
+        # Get the full path information from tags if available (for virtual/filtered views)
+        tags = item.get('tags', ())
+        if tags and len(tags) >= 1:
+            # We're in a filtered view - use the stored full path and original name
+            full_path = tags[0]
+            original_name = tags[1] if len(tags) > 1 else name
+            print(f"Download folder: Using full path from tags: {full_path}")
+            print(f"Download folder: Original name: {original_name}")
+        else:
+            # Regular view - construct path from current directory
+            current_dir = self.ftp_connection.pwd()
+            if current_dir == '/':
+                full_path = f"/{name}"
+            else:
+                full_path = f"{current_dir}/{name}"
+            original_name = name
+            print(f"Download folder: Using constructed path: {full_path}")
+        
+        # Detect content type using the original folder name
+        content_type = self.detect_content_type(original_name, full_path)
         
         # Get destination folder
-        destination = self.get_destination_folder(content_type, name)
+        destination = self.get_destination_folder(content_type, original_name)
         if not destination:
             messagebox.showerror("No Destination", 
                                f"Please configure a destination folder for {content_type}s")
@@ -4808,7 +4853,7 @@ Progress: {thread_info['progress']}
         confirm = messagebox.askyesno(
             "Download Folder",
             f"Download entire folder?\n\n"
-            f"Folder: {name}\n"
+            f"Folder: {original_name}\n"
             f"Type: {content_label}\n"
             f"Destination: {destination}\n\n"
             f"This will download all files in the folder."
@@ -4817,8 +4862,8 @@ Progress: {thread_info['progress']}
         if not confirm:
             return
         
-        # Start folder download
-        self._download_folder_contents(name, destination, content_type)
+        # Start folder download with the full path
+        self._download_folder_contents(full_path, destination, content_type, original_name)
     
     def _matches_filter(self, filename, file_filter):
         """Check if filename matches the filter pattern"""
@@ -4865,7 +4910,7 @@ Progress: {thread_info['progress']}
                 self.update_queue_display()
                 print(f"❌ Download error: {queue_item['filename']}: {e}")
     
-    def _download_folder_contents(self, folder_name, destination, content_type):
+    def _download_folder_contents(self, folder_path, destination, content_type, folder_name=None):
         """Download all contents of a folder with smart RAR set detection"""
         if not self.ftp_connected:
             return
@@ -4874,11 +4919,15 @@ Progress: {thread_info['progress']}
             # Save current directory
             original_dir = self.ftp_connection.pwd()
             
-            # Navigate to folder
-            self.ftp_connection.cwd(folder_name)
+            # If folder_name is not provided, extract it from the path
+            if folder_name is None:
+                folder_name = folder_path.split('/')[-1] if '/' in folder_path else folder_path
+            
+            print(f"  Navigating to folder: {folder_path}")
+            self.ftp_connection.cwd(folder_path)
             current_remote_path = self.ftp_connection.pwd()
             
-            # Create local destination folder
+            # Create local destination folder using the original folder name
             local_folder = Path(destination) / folder_name
             local_folder.mkdir(parents=True, exist_ok=True)
             
@@ -4900,7 +4949,7 @@ Progress: {thread_info['progress']}
                         all_files.append({
                             'name': filename,
                             'size': file_size,
-                            'path': f"{current_remote_path}/{filename}"
+                            'path': f"{current_remote_path}/{filename}".replace('//', '/')
                         })
                         
                         # Check if this is part of a RAR set

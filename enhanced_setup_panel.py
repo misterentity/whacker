@@ -203,17 +203,30 @@ You can assign different processing modes to different directories based on your
         
         ttk.Button(plex_frame, text="Auto-Detect", command=self.auto_detect_token).grid(row=1, column=2, padx=(10, 0), pady=5)
         
+        # OMDB API Key
+        ttk.Label(plex_frame, text="OMDB API Key:").grid(row=2, column=0, sticky=tk.W, pady=5)
+        self.omdb_api_key_var = tk.StringVar()
+        self.omdb_api_key_entry = ttk.Entry(plex_frame, textvariable=self.omdb_api_key_var, width=50, show="*")
+        self.omdb_api_key_entry.grid(row=2, column=1, sticky=tk.W, padx=(10, 0), pady=5)
+        
+        ttk.Button(plex_frame, text="Get Key", command=self.open_omdb_website).grid(row=2, column=2, padx=(10, 0), pady=5)
+        
+        # OMDB API Key info
+        omdb_info = ttk.Label(plex_frame, text="Required for FTP IMDb info feature. Get your free API key at omdbapi.com", 
+                             foreground='blue')
+        omdb_info.grid(row=3, column=0, columnspan=3, sticky=tk.W, pady=(0, 5))
+        
         # Connection status
         self.plex_status_label = tk.Label(plex_frame, text="Not Connected", foreground='red')
-        self.plex_status_label.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=5)
+        self.plex_status_label.grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=5)
         
-        ttk.Button(plex_frame, text="Test Connection", command=self.test_plex_connection).grid(row=2, column=2, padx=(10, 0), pady=5)
+        ttk.Button(plex_frame, text="Test Connection", command=self.test_plex_connection).grid(row=4, column=2, padx=(10, 0), pady=5)
         
         # Libraries
-        ttk.Label(plex_frame, text="Available Libraries:").grid(row=3, column=0, sticky=tk.NW, pady=(10, 5))
+        ttk.Label(plex_frame, text="Available Libraries:").grid(row=5, column=0, sticky=tk.NW, pady=(10, 5))
         
         libraries_frame = ttk.Frame(plex_frame)
-        libraries_frame.grid(row=3, column=1, columnspan=2, sticky=tk.W, padx=(10, 0), pady=(10, 5))
+        libraries_frame.grid(row=5, column=1, columnspan=2, sticky=tk.W, padx=(10, 0), pady=(10, 5))
         
         self.libraries_listbox = tk.Listbox(libraries_frame, height=4, width=60)
         libs_scrollbar = ttk.Scrollbar(libraries_frame, orient=tk.VERTICAL, command=self.libraries_listbox.yview)
@@ -221,6 +234,18 @@ You can assign different processing modes to different directories based on your
         
         self.libraries_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         libs_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    
+    def open_omdb_website(self):
+        """Open OMDB API website to get API key"""
+        import webbrowser
+        webbrowser.open("https://www.omdbapi.com/apikey.aspx")
+        messagebox.showinfo("OMDB API Key", 
+                           "Opening OMDB API website.\n\n"
+                           "1. Sign up for a free API key\n"
+                           "2. Copy the API key from the confirmation email\n"
+                           "3. Paste it in the OMDB API Key field\n"
+                           "4. Save the configuration\n\n"
+                           "Free tier: 1,000 requests per day")
     
     def create_enhanced_directory_pairs_section(self, parent):
         """Create enhanced directory pairs configuration with processing modes"""
@@ -840,6 +865,9 @@ Note: Enhanced UPnP discovery with multiple methods attempted."""
                     'host': self.plex_host_var.get(),
                     'token': self.plex_token_var.get()
                 },
+                'omdb': {
+                    'api_key': self.omdb_api_key_var.get()
+                },
                 'directory_pairs': self.setup_data['directory_pairs'],
                 'global_processing_mode': self.global_mode_var.get(),
                 'processing_modes': {
@@ -927,6 +955,25 @@ Note: Enhanced UPnP discovery with multiple methods attempted."""
             
         except Exception as e:
             print(f"Error updating main config: {e}")
+        
+        # Also update FTP config with OMDB API key if it exists
+        try:
+            ftp_config_path = self.script_dir / 'ftp_config.json'
+            if ftp_config_path.exists():
+                with open(ftp_config_path, 'r') as f:
+                    ftp_config = json.load(f)
+                
+                # Update OMDB API key in FTP config
+                if 'imdb' not in ftp_config:
+                    ftp_config['imdb'] = {}
+                
+                ftp_config['imdb']['api_key'] = self.omdb_api_key_var.get()
+                
+                # Save updated FTP config
+                with open(ftp_config_path, 'w') as f:
+                    json.dump(ftp_config, f, indent=2)
+        except Exception as e:
+            print(f"Error updating FTP config: {e}")
     
     def load_setup_config(self):
         """Load setup configuration"""
@@ -940,6 +987,10 @@ Note: Enhanced UPnP discovery with multiple methods attempted."""
                 plex_config = config.get('plex', {})
                 self.plex_host_var.set(plex_config.get('host', ''))
                 self.plex_token_var.set(plex_config.get('token', ''))
+                
+                # Load OMDB settings
+                omdb_config = config.get('omdb', {})
+                self.omdb_api_key_var.set(omdb_config.get('api_key', ''))
                 
                 # Load global processing mode
                 self.global_mode_var.set(config.get('global_processing_mode', 'python_vfs'))
