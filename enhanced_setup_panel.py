@@ -1244,10 +1244,126 @@ Note: Enhanced UPnP discovery with multiple methods attempted."""
             self.setup_status_label.config(text=f"Plex connection failed: {e}", foreground='red')
     
     def auto_install_rar2fs(self):
-        """Auto-install rar2fs"""
-        # Implementation for rar2fs auto-installation
-        # This would use the rar2fs_installer.py
-        pass
+        """Auto-install rar2fs with admin privilege checking"""
+        import ctypes
+        import sys
+        
+        # Check if running as administrator
+        def is_admin():
+            try:
+                return ctypes.windll.shell32.IsUserAnAdmin()
+            except:
+                return False
+        
+        if not is_admin():
+            response = messagebox.askyesno(
+                "Administrator Required", 
+                "rar2fs installation requires administrator privileges.\n\n"
+                "The application needs to:\n"
+                "• Install WinFSP (Windows File System Proxy)\n"
+                "• Install Cygwin components\n"
+                "• Write to system directories\n\n"
+                "Would you like to restart the Enhanced Setup Panel as administrator?"
+            )
+            
+            if response:
+                try:
+                    # Get the current script path
+                    current_script = sys.argv[0]
+                    
+                    # Restart as administrator
+                    ctypes.windll.shell32.ShellExecuteW(
+                        None, 
+                        "runas", 
+                        sys.executable, 
+                        f'"{current_script}"', 
+                        None, 
+                        1
+                    )
+                    
+                    # Close current instance
+                    self.parent.quit()
+                    
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to restart as administrator: {e}")
+            
+            return
+        
+        # Running as admin, proceed with installation
+        def install_in_thread():
+            try:
+                self.rar2fs_status_label.config(text="🔄 Installing rar2fs...", foreground='blue')
+                self.parent.update()
+                
+                # Import and run the installer
+                from rar2fs_installer import Rar2fsInstaller
+                
+                # Create installer with progress feedback
+                installer = Rar2fsInstaller(
+                    install_dir="C:/Program Files/PlexRarBridge/rar2fs",
+                    logger=None
+                )
+                
+                # Update status during installation
+                self.rar2fs_status_label.config(text="🔄 Checking existing installation...", foreground='blue')
+                self.parent.update()
+                
+                status = installer.check_existing_installation()
+                
+                if all(status.values()):
+                    self.rar2fs_status_label.config(text="✅ rar2fs: Already installed", foreground='green')
+                    messagebox.showinfo("Installation", "rar2fs is already installed and configured!")
+                    return
+                
+                # Perform installation
+                self.rar2fs_status_label.config(text="🔄 Installing WinFSP...", foreground='blue')
+                self.parent.update()
+                
+                success = installer.install()
+                
+                if success:
+                    # Update executable path
+                    rar2fs_exe = "C:/Program Files/PlexRarBridge/rar2fs/bin/rar2fs.exe"
+                    self.rar2fs_exe_var.set(rar2fs_exe)
+                    
+                    # Test installation
+                    self.test_rar2fs()
+                    
+                    messagebox.showinfo(
+                        "Installation Complete", 
+                        "rar2fs has been installed successfully!\n\n"
+                        "Components installed:\n"
+                        "• WinFSP (Windows File System Proxy)\n"
+                        "• rar2fs executable\n"
+                        "• Required dependencies\n\n"
+                        "You can now use rar2fs processing mode for your directory pairs."
+                    )
+                else:
+                    self.rar2fs_status_label.config(text="❌ rar2fs: Installation failed", foreground='red')
+                    messagebox.showerror(
+                        "Installation Failed", 
+                        "rar2fs installation failed. Please check the logs for details.\n\n"
+                        "You may need to:\n"
+                        "• Ensure internet connectivity\n"
+                        "• Disable antivirus temporarily\n"
+                        "• Try manual installation"
+                    )
+                    
+            except ImportError:
+                self.rar2fs_status_label.config(text="❌ rar2fs: Installer not found", foreground='red')
+                messagebox.showerror(
+                    "Installer Error", 
+                    "rar2fs_installer.py not found.\n\n"
+                    "Please ensure the rar2fs installer module is available."
+                )
+            except Exception as e:
+                self.rar2fs_status_label.config(text=f"❌ rar2fs: Error - {e}", foreground='red')
+                messagebox.showerror("Installation Error", f"An error occurred during installation:\n\n{e}")
+        
+        # Run installation in a separate thread to prevent GUI freezing
+        import threading
+        install_thread = threading.Thread(target=install_in_thread, daemon=True)
+        install_thread.start()
     
     def browse_mount_base(self):
         """Browse for mount base directory"""

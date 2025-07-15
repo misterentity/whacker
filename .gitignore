@@ -184,3 +184,10 @@ dev_*
 development_*
 *.dev
 *.development 
+# Local working configurations with real credentials
+*.working.yaml
+*.working.json
+config.working.yaml
+setup_config.working.json
+enhanced_setup_config.working.json
+ftp_config.working.json
