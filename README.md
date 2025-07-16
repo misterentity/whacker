@@ -1,21 +1,29 @@
-# Plex RAR Bridge - Enhanced Edition
+# Plex RAR Bridge - Enhanced Edition v2.0
 
 ## 🎯 Overview
 
-**Plex RAR Bridge Enhanced Edition** is a comprehensive Windows service that automatically processes RAR archives for Plex Media Server with **three powerful processing modes**, **per-directory configuration**, and an **enhanced GUI interface**. Choose the perfect processing method for each directory based on your specific needs.
+**Plex RAR Bridge Enhanced Edition v2.0** is a comprehensive Windows service that automatically processes RAR archives for Plex Media Server with **three powerful processing modes**, **streamlined interface**, and a **revolutionary one-click rar2fs installer**. Choose the perfect processing method for each directory based on your specific needs.
 
-## 🚀 What's New in Enhanced Edition
+## 🚀 What's New in Enhanced Edition v2.0
+
+### **🎉 Version 2.0 Improvements**
+- **🚀 One-Click rar2fs Installation**: Revolutionary installer eliminates complex manual setup
+- **🎯 Streamlined Interface**: Single unified Enhanced Setup Panel (removed duplicate interfaces)
+- **🔧 Smart Dependency Management**: Automatic WinFSP and Cygwin installation with error recovery
+- **⚡ Enhanced Performance**: Improved installer with complete component integration
 
 ### **Three Processing Modes**
 - **🔥 Python VFS (Recommended)**: Zero-dependency virtual filesystem with instant file access
-- **⚡ External rar2fs**: Space-efficient FUSE mounting (advanced users)
+- **⚡ External rar2fs**: Space-efficient FUSE mounting with one-click installation
 - **🗂️ Traditional Extraction**: Classic file extraction (well-tested)
 
 ### **Enhanced GUI Features**
+- **Streamlined Interface**: Single unified Enhanced Setup Panel (no duplicate interfaces)
 - **Per-Directory Configuration**: Different processing modes for different directories
 - **Visual Processing Mode Selection**: Easy-to-use interface for complex setups
+- **One-Click rar2fs Installation**: Simplified single-button installer with all fixes included
 - **Real-Time Monitoring**: Live status updates and performance metrics
-- **Advanced Setup Panel**: Complete configuration management
+- **Advanced Setup Panel**: Complete configuration management with enhanced rar2fs integration
 - **Processing Mode Comparison**: Visual comparison of all modes
 
 ### **Intelligent Processing**
@@ -29,15 +37,36 @@
 | Feature | Python VFS | rar2fs | Extraction |
 |---------|------------|--------|------------|
 | **Dependencies** | None | Cygwin + WinFSP | UnRAR only |
-| **Setup Complexity** | ✅ Simple | ❌ Complex | ✅ Simple |
+| **Setup Complexity** | ✅ Simple | ✅ One-Click | ✅ Simple |
 | **Disk Space Usage** | ✅ Minimal | ✅ Minimal | ❌ 2x Required |
 | **Processing Speed** | ✅ Instant | ✅ Fast | ⚠️ Slow |
 | **File Availability** | ✅ Immediate | ✅ Immediate | ⚠️ After extraction |
 | **Plex Compatibility** | ✅ HTTP Streaming | ✅ Native | ✅ Native |
 | **Windows Support** | ✅ Native | ⚠️ Via Cygwin | ✅ Native |
-| **Recommended For** | Most users | Advanced users | Legacy systems |
+| **Recommended For** | Most users | All users | Legacy systems |
 
 ## 🛠️ Installation
+
+### **🚀 NEW: Enhanced rar2fs Installation**
+
+The **Enhanced Setup Panel** now includes a revolutionary **one-click rar2fs installer** that eliminates the complexity of manual setup:
+
+#### **What's Included:**
+- ✅ **WinFSP Installation**: Automatic download and installation with complete components (`ADDLOCAL=ALL`)
+- ✅ **Cygwin Environment**: Full development environment with all required packages
+- ✅ **Complete Package List**: Includes `unzip`, `gettext-devel`, and all build dependencies
+- ✅ **Source Compilation**: Downloads and compiles latest UnRAR and rar2fs from source
+- ✅ **Windows Integration**: Creates wrapper scripts for seamless Windows usage
+- ✅ **Error Recovery**: Automatic fixes for common installation issues
+- ✅ **Progress Feedback**: Real-time installation progress and status updates
+
+#### **Installation Process:**
+1. Open **Enhanced Setup Panel** in the GUI
+2. Navigate to **rar2fs Configuration** tab
+3. Click **"🚀 Install rar2fs"** button
+4. Follow admin privilege prompt
+5. Wait 15-30 minutes for complete installation
+6. **Done!** - rar2fs ready to use
 
 ### **Enhanced PowerShell Installer (Recommended)**
 
@@ -106,7 +135,10 @@ PlexRarBridge/
 ├── 📁 Processing Modes
 │   ├── python_rar_vfs.py          # Python VFS handler
 │   ├── rar2fs_handler.py          # rar2fs integration
-│   └── rar2fs_installer.py        # Automated rar2fs installer
+│   ├── advanced_rar2fs_installer.py # Enhanced one-click rar2fs installer
+│   ├── fix_cygwin_unzip.py        # Cygwin unzip package fix
+│   ├── fix_cygwin_gettext.py      # Cygwin gettext-devel package fix
+│   └── fix_winfsp_cygfuse.py      # WinFSP Cygfuse installation fix
 │
 ├── 📁 Configuration Examples
 │   ├── config-enhanced.yaml       # Enhanced configuration
@@ -147,19 +179,21 @@ python gui_monitor.py
 2. **📋 Retry Queue**: View failed processing attempts
 3. **📊 Live Logs**: Real-time logging with filtering
 4. **📈 Statistics**: Processing metrics and performance
-5. **🌐 FTP Downloads**: FTP SSL download management
-6. **⚙️ Setup Panel**: Basic configuration (legacy)
-7. **🎯 Enhanced Setup**: **NEW** - Advanced per-directory configuration
-8. **📝 Raw Configuration**: Direct config file editing
+5. **🌐 FTP Downloads**: FTP SSL download management with IMDb integration
+6. **🎯 Enhanced Setup**: **STREAMLINED** - Single unified configuration panel
+7. **📝 Configuration**: Direct config file editing
 
 ### **Enhanced Setup Panel Features**
 
 - **🎨 Visual Processing Mode Selection**: Easy comparison and selection
 - **📂 Per-Directory Configuration**: Different modes for different directories
+- **🚀 One-Click rar2fs Installation**: Enhanced installer with automatic dependency resolution
+- **🔧 Smart Dependency Management**: Automatic WinFSP and Cygwin setup with all required components
 - **🔗 Plex Integration**: Auto-detect server and libraries
 - **🧪 Real-Time Testing**: Test configurations before applying
 - **💾 Configuration Management**: Save, load, and apply settings
 - **📊 Performance Tuning**: Mode-specific optimization
+- **🎯 Streamlined Interface**: No duplicate panels, simplified workflow
 
 ## 📝 Configuration
 
@@ -236,8 +270,9 @@ processing_modes:
 #### **⚡ External rar2fs**
 - **Space Efficient**: Minimal disk usage
 - **Native Integration**: Files appear as regular files
-- **Complex Setup**: Requires Cygwin + WinFSP
-- **Advanced Users**: Technical knowledge required
+- **One-Click Installation**: Enhanced installer handles all dependencies automatically
+- **Smart Setup**: WinFSP with complete components, Cygwin with all build tools
+- **Error Recovery**: Automatic fix for common installation issues
 
 ```yaml
 processing_modes:
