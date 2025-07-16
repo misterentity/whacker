@@ -3,6 +3,20 @@
 ## Current Focus (As of July 15, 2025)
 
 ### Recently Completed ✅
+- **RESTORED: Basic Setup Panel v2.0** (July 15, 2025)
+  - **Missing Tab Issue**: Restored basic "Setup Panel" tab that was accidentally removed
+  - **Tab Reordering**: Fixed tab sequence - Setup Panel (Tab 6), Enhanced Setup (Tab 7), Configuration (Tab 8)
+  - **Layout Fixes**: Fixed Plex connection section layout from grid to pack for consistency
+  - **Command Line Args**: Added support for both `setup` and `enhanced` arguments
+  - **Complete Interface**: Now have both basic and enhanced setup panels available
+
+- **CRITICAL FIX: Enhanced Setup Panel v2.0** (July 15, 2025)
+  - **Duplicate Tab Issue**: Fixed EnhancedSetupPanel self-adding to notebook
+  - **Method Name Error**: Fixed `test_all_configurations()` call to `test_all_configs()`
+  - **Streamlined Interface**: Single Enhanced Setup tab (no duplicates)
+  - **Single Installation Button**: "🚀 Install rar2fs" button working correctly
+  - **Clean v2.0 Interface**: All duplicate interfaces removed
+
 - **ENHANCED: rar2fs Configuration & Management Interface** (July 15, 2025)
   - **New Features Added**:
     - ✅ **Service Management Controls**: Start/Stop/Restart rar2fs service
@@ -33,6 +47,16 @@
   - **Fix Applied**: Added proper threading call with `install_thread.start()`
   - **Result**: Auto-Install rar2fs button now properly executes installation process
 
+### Current Complete Tab Structure
+1. **Active Threads** - Real-time thread monitoring
+2. **Retry Queue** - Failed processing queue
+3. **Live Logs** - Real-time log monitoring  
+4. **Statistics** - Processing metrics
+5. **FTP Downloads** - FTP SSL download management
+6. **Setup Panel** - Basic directory pairs and Plex configuration
+7. **Enhanced Setup** - Advanced processing modes and configuration
+8. **Raw Configuration** - Direct config file editing
+
 ### Current rar2fs Management Features
 - **🔧 Complete Service Control**: Start, stop, restart rar2fs service with status monitoring
 - **📂 Mount Management**: View active mounts, unmount operations, directory access
@@ -42,33 +66,34 @@
 - **🔄 Auto-Status Updates**: Silent refresh on startup, manual refresh options
 
 ### Current Installation Status
-- **PlexRarBridge**: Successfully upgraded with latest features and bug fixes
-- **Enhanced Setup Panel**: All functionality working including enhanced rar2fs management
+- **PlexRarBridge v2.0**: Successfully running with complete tab structure
+- **Basic Setup Panel**: Restored and fully functional for simple configurations
+- **Enhanced Setup Panel**: Fixed and fully functional with advanced processing modes
 - **rar2fs Installer**: Updated with working URLs and ready for installation
 - **Processing Modes**: Python VFS (active), rar2fs (installer + management ready), traditional extraction (available)
 
 ### Active Tasks
-- **None currently pending** - All major issues resolved and features enhanced
-- **Ready for user testing** of rar2fs installation and management via Enhanced Setup Panel
+- **None currently pending** - All v2.0 issues resolved and complete interface restored
+- **Ready for production use** with full dual-panel configuration system
 
 ### Key Achievements This Session
-1. ✅ Identified and resolved critical threading bug in Enhanced Setup Panel
-2. ✅ Diagnosed and fixed broken download URLs in rar2fs installer  
-3. ✅ Successfully deployed all fixes to production installation
-4. ✅ **Enhanced rar2fs interface with comprehensive management controls**
-5. ✅ Added service management, mount management, and advanced configuration
-6. ✅ Verified installation button and installer functionality
-7. ✅ System fully operational with enhanced rar2fs management capabilities
+1. ✅ **Restored Missing Basic Setup Panel**: Fixed accidental removal of basic setup tab
+2. ✅ **Fixed Tab Ordering**: Proper sequence with both basic and enhanced panels
+3. ✅ **Fixed Layout Issues**: Corrected Plex connection section layout
+4. ✅ **Enhanced Command Line Support**: Added `setup` and `enhanced` arguments
+5. ✅ **Complete Dual Interface**: Both basic and advanced configuration options available
+6. ✅ **All GUI Issues Resolved**: No duplicate tabs, no missing panels, no errors
 
 ### Next Steps
-- User can now successfully install and fully manage rar2fs via Enhanced Setup Panel
-- Complete service lifecycle management available (install, configure, start, stop, monitor)
-- Advanced mount management and troubleshooting tools ready for use
-- No additional code changes needed - system is production-ready with enhanced features
+- **Complete v2.0 Interface Available**: Both basic Setup Panel and Enhanced Setup Panel functional
+- **Dual Configuration Approach**: Users can choose simple or advanced configuration
+- **All processing modes ready** for configuration and use
+- **System production-ready** with complete v2.0 interface
 
 ### Technical Notes
-- Enhanced Setup Panel: Located at `C:\Program Files\PlexRarBridge\enhanced_setup_panel.py`
-- rar2fs Installer: Located at `C:\Program Files\PlexRarBridge\rar2fs_installer.py`  
-- Both files updated with July 15, 2025 timestamps
-- **New rar2fs management interface includes**: Service controls, mount management, dependency checking, log access
-- PlexRarBridge Windows service: Running normally throughout all updates 
+- **Basic Setup Panel**: Tab 6 - Simple directory pairs and Plex configuration
+- **Enhanced Setup Panel**: Tab 7 - Advanced processing modes and configuration  
+- **GUI Interface**: Complete 8-tab structure with no duplicates or missing panels
+- **Command Line**: `python gui_monitor.py setup` or `python gui_monitor.py enhanced`
+- **v2.0 Interface**: Clean, complete design with both basic and advanced options
+- **PlexRarBridge Windows service**: Running normally throughout all updates 

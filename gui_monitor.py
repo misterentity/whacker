@@ -833,10 +833,13 @@ class PlexRarBridgeGUI:
         # Tab 5: FTP Download Panel
         self.create_ftp_tab()
         
-        # Tab 6: Enhanced Setup Panel
+        # Tab 6: Setup Panel
+        self.create_setup_tab()
+        
+        # Tab 7: Enhanced Setup Panel
         self.create_enhanced_setup_tab()
         
-        # Tab 7: Configuration
+        # Tab 8: Configuration
         self.create_config_tab()
     
     def create_threads_tab(self):
@@ -3410,39 +3413,54 @@ class PlexRarBridgeGUI:
 
     
     def create_plex_connection_section(self, parent):
-        """Create Plex connection configuration"""
+        """Create Plex server connection section"""
         # Plex Connection Frame
         plex_frame = ttk.LabelFrame(parent, text="Plex Server Connection", padding=15)
         plex_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        # Server URL
-        ttk.Label(plex_frame, text="Plex Server URL:", style='Header.TLabel').grid(row=0, column=0, sticky=tk.W, pady=5)
-        self.plex_host_var = tk.StringVar()
-        self.plex_host_entry = ttk.Entry(plex_frame, textvariable=self.plex_host_var, width=40)
-        self.plex_host_entry.grid(row=0, column=1, sticky=tk.W, padx=(10, 0), pady=5)
+        # Connection info
+        info_frame = ttk.Frame(plex_frame)
+        info_frame.pack(fill=tk.X, pady=(0, 10))
         
-        ttk.Button(plex_frame, text="Auto-Detect", command=self.auto_detect_plex).grid(row=0, column=2, padx=(10, 0), pady=5)
+        connection_info = ttk.Label(info_frame, 
+                                  text="Configure connection to your Plex Media Server. Auto-detection will discover your server and authentication token.",
+                                  style='Status.TLabel')
+        connection_info.pack()
+        
+        # Server URL
+        url_frame = ttk.Frame(plex_frame)
+        url_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(url_frame, text="Plex Server URL:", style='Header.TLabel').pack(side=tk.LEFT)
+        self.plex_host_var = tk.StringVar()
+        self.plex_host_entry = ttk.Entry(url_frame, textvariable=self.plex_host_var, width=40)
+        self.plex_host_entry.pack(side=tk.LEFT, padx=(10, 5))
+        ttk.Button(url_frame, text="Auto-Detect", command=self.auto_detect_plex).pack(side=tk.LEFT)
         
         # Token
-        ttk.Label(plex_frame, text="Plex Token:", style='Header.TLabel').grid(row=1, column=0, sticky=tk.W, pady=5)
+        token_frame = ttk.Frame(plex_frame)
+        token_frame.pack(fill=tk.X, pady=5)
+        
+        ttk.Label(token_frame, text="Plex Token:", style='Header.TLabel').pack(side=tk.LEFT)
         self.plex_token_var = tk.StringVar()
-        self.plex_token_entry = ttk.Entry(plex_frame, textvariable=self.plex_token_var, width=40, show="*")
-        self.plex_token_entry.grid(row=1, column=1, sticky=tk.W, padx=(10, 0), pady=5)
+        self.plex_token_entry = ttk.Entry(token_frame, textvariable=self.plex_token_var, show="*", width=40)
+        self.plex_token_entry.pack(side=tk.LEFT, padx=(10, 5))
+        ttk.Button(token_frame, text="Auto-Detect", command=self.auto_detect_token).pack(side=tk.LEFT)
         
-        ttk.Button(plex_frame, text="Auto-Detect", command=self.auto_detect_token).grid(row=1, column=2, padx=(10, 0), pady=5)
+        # Status and Test
+        status_frame = ttk.Frame(plex_frame)
+        status_frame.pack(fill=tk.X, pady=5)
         
-        # Connection status and test
-        self.plex_status_label = ttk.Label(plex_frame, text="Not Connected", style='Error.TLabel')
-        self.plex_status_label.grid(row=2, column=0, columnspan=2, sticky=tk.W, pady=5)
+        self.plex_status_label = ttk.Label(status_frame, text="Not Connected", style='Status.TLabel')
+        self.plex_status_label.pack(side=tk.LEFT)
         
-        ttk.Button(plex_frame, text="Test Connection", command=self.test_plex_connection).grid(row=2, column=2, padx=(10, 0), pady=5)
+        ttk.Button(status_frame, text="Test Connection", command=self.test_plex_connection).pack(side=tk.RIGHT)
         
-        # Libraries list
-        ttk.Label(plex_frame, text="Available Libraries:", style='Header.TLabel').grid(row=3, column=0, sticky=tk.NW, pady=(10, 5))
+        # Libraries display
+        ttk.Label(plex_frame, text="Available Libraries:", style='Header.TLabel').pack(anchor=tk.W, pady=(10, 5))
         
-        # Libraries frame with scrollbar
         libraries_frame = ttk.Frame(plex_frame)
-        libraries_frame.grid(row=3, column=1, columnspan=2, sticky=tk.W, padx=(10, 0), pady=(10, 5))
+        libraries_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 5))
         
         self.libraries_listbox = tk.Listbox(libraries_frame, height=6, width=50)
         libs_scrollbar = ttk.Scrollbar(libraries_frame, orient=tk.VERTICAL, command=self.libraries_listbox.yview)
@@ -4031,8 +4049,11 @@ class PlexRarBridgeGUI:
             # Import the enhanced setup panel
             from enhanced_setup_panel import EnhancedSetupPanel
             
-            # Create the enhanced setup panel (it will add itself to the notebook)
+            # Create the enhanced setup panel (it creates the frame but doesn't add itself)
             self.enhanced_setup_panel = EnhancedSetupPanel(self.notebook, self.script_dir)
+            
+            # Add the panel's frame to the notebook
+            self.notebook.add(self.enhanced_setup_panel.setup_frame, text="Enhanced Setup")
             
         except ImportError:
             # Fallback if enhanced setup panel is not available
@@ -5081,6 +5102,53 @@ Progress: {thread_info['progress']}
         # Convert simple wildcard patterns to regex
         pattern = file_filter.replace('*', '.*').replace('?', '.')
         return re.match(pattern, filename, re.IGNORECASE) is not None
+    
+    def create_setup_tab(self):
+        """Create basic setup panel tab"""
+        setup_frame = ttk.Frame(self.notebook)
+        self.notebook.add(setup_frame, text="Setup Panel")
+        
+        # Initialize setup data
+        self.setup_data = {
+            'plex_host': '',
+            'plex_token': '',
+            'plex_libraries': [],
+            'directory_pairs': []
+        }
+        
+        # Create main scrollable frame
+        canvas = tk.Canvas(setup_frame)
+        scrollbar = ttk.Scrollbar(setup_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Title
+        ttk.Label(scrollable_frame, text="Plex RAR Bridge Setup", style='Title.TLabel').pack(pady=(10, 20))
+        
+        # Create setup sections
+        self.create_plex_connection_section(scrollable_frame)
+        self.create_directory_pairs_section(scrollable_frame)
+        self.create_setup_controls_section(scrollable_frame)
+        
+        # Initialize variables after creating sections
+        self.plex_host_var = tk.StringVar()
+        self.plex_token_var = tk.StringVar()
+        
+        # Try to load existing configuration
+        self.load_setup_config()
+        
+        # Try to load from main config as fallback
+        self.load_from_main_config()
 
 if __name__ == "__main__":
     import tkinter.simpledialog
@@ -5093,7 +5161,10 @@ if __name__ == "__main__":
         arg = sys.argv[1].lower()
         if arg == 'setup':
             # Select the setup tab
-            app.notebook.select(5)  # Enhanced Setup Panel is the 6th tab (index 5)
+            app.notebook.select(5)  # Setup Panel is the 6th tab (index 5)
+        elif arg == 'enhanced':
+            # Select the enhanced setup tab
+            app.notebook.select(6)  # Enhanced Setup Panel is the 7th tab (index 6)
         elif arg == 'ftp':
             # Select the FTP tab
             app.notebook.select(4)  # FTP Panel is the 5th tab (index 4)

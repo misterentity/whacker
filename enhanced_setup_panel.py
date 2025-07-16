@@ -54,14 +54,13 @@ class EnhancedSetupPanel:
         
         # Create the enhanced setup frame and return it
         self.setup_frame = self.create_enhanced_setup_panel()
-        # Add the frame to the parent notebook
-        self.parent.add(self.setup_frame, text="Enhanced Setup")
+        # DO NOT add the frame to the parent notebook here - let gui_monitor handle it
         
         # Load existing setup
         self.load_setup_config()
         
         # Test all configurations
-        self.test_all_configurations()
+        self.test_all_configs()
         
         # Auto-refresh rar2fs status on startup (silent)
         self.parent.after(1000, self.silent_refresh_rar2fs_status)  # Refresh after 1 second
