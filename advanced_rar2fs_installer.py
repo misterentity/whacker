@@ -55,6 +55,8 @@ class AdvancedRarFSInstaller:
             'wget',
             'tar',
             'gzip',
+            'unzip',  # Required for extracting rar2fs source
+            'gettext-devel',  # Required for autopoint (used by autoreconf)
             'pkg-config',
             'libtool',
             'patch',

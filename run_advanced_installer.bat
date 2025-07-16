@@ -42,7 +42,8 @@ if errorlevel 1 (
 )
 
 REM Run the advanced installer
-python "%~dp0advanced_rar2fs_installer.py"
+cd /d "%~dp0"
+python advanced_rar2fs_installer.py
 
 if errorlevel 1 (
     echo.

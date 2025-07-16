@@ -833,13 +833,10 @@ class PlexRarBridgeGUI:
         # Tab 5: FTP Download Panel
         self.create_ftp_tab()
         
-        # Tab 6: Setup Panel
-        self.create_setup_tab()
-        
-        # Tab 7: Enhanced Setup Panel
+        # Tab 6: Enhanced Setup Panel
         self.create_enhanced_setup_tab()
         
-        # Tab 8: Configuration
+        # Tab 7: Configuration
         self.create_config_tab()
     
     def create_threads_tab(self):
@@ -3410,47 +3407,7 @@ class PlexRarBridgeGUI:
                 status
             ))
     
-    def create_setup_tab(self):
-        """Create comprehensive setup panel"""
-        setup_frame = ttk.Frame(self.notebook)
-        self.notebook.add(setup_frame, text="Setup Panel")
-        
-        # Create scrollable frame
-        canvas = tk.Canvas(setup_frame)
-        scrollbar = ttk.Scrollbar(setup_frame, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
-        
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        # Pack canvas and scrollbar
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        # Initialize setup data
-        self.setup_data = {
-            'directory_pairs': [],
-            'plex_libraries': [],
-            'plex_host': '',
-            'plex_token': ''
-        }
-        
-        # Plex Connection Section
-        self.create_plex_connection_section(scrollable_frame)
-        
-        # Directory Pairs Section
-        self.create_directory_pairs_section(scrollable_frame)
-        
-        # Control Buttons Section
-        self.create_setup_controls_section(scrollable_frame)
-        
-        # Load existing setup
-        self.load_setup_config()
+
     
     def create_plex_connection_section(self, parent):
         """Create Plex connection configuration"""
@@ -4079,20 +4036,23 @@ class PlexRarBridgeGUI:
             
         except ImportError:
             # Fallback if enhanced setup panel is not available
-            fallback_frame = ttk.Frame(self.notebook)
-            self.notebook.add(fallback_frame, text="Enhanced Setup")
+            enhanced_frame = ttk.Frame(self.notebook)
+            self.notebook.add(enhanced_frame, text="Enhanced Setup")
             
-            ttk.Label(fallback_frame, 
-                     text="Enhanced Setup Panel is not available.\nPlease ensure enhanced_setup_panel.py is in the same directory.",
-                     font=('TkDefaultFont', 12)).pack(expand=True)
+            ttk.Label(enhanced_frame, 
+                text="Enhanced Setup Panel is not available.\nPlease ensure enhanced_setup_panel.py is in the same directory.",
+                style='Error.TLabel'
+            ).pack(expand=True)
+            
         except Exception as e:
             # Error handling
-            error_frame = ttk.Frame(self.notebook)
-            self.notebook.add(error_frame, text="Enhanced Setup")
+            enhanced_frame = ttk.Frame(self.notebook)
+            self.notebook.add(enhanced_frame, text="Enhanced Setup")
             
-            ttk.Label(error_frame, 
-                     text=f"Error loading Enhanced Setup Panel:\n{e}",
-                     font=('TkDefaultFont', 12)).pack(expand=True)
+            ttk.Label(enhanced_frame, 
+                text=f"Error loading Enhanced Setup Panel:\n{e}",
+                style='Error.TLabel'
+            ).pack(expand=True)
     
     def create_config_tab(self):
         """Create configuration tab"""
@@ -5133,7 +5093,7 @@ if __name__ == "__main__":
         arg = sys.argv[1].lower()
         if arg == 'setup':
             # Select the setup tab
-            app.notebook.select(5)  # Setup Panel is the 6th tab (index 5)
+            app.notebook.select(5)  # Enhanced Setup Panel is the 6th tab (index 5)
         elif arg == 'ftp':
             # Select the FTP tab
             app.notebook.select(4)  # FTP Panel is the 5th tab (index 4)
